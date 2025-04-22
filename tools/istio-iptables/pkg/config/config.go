@@ -90,8 +90,7 @@ type Config struct {
 	Reconcile                bool       `json:"RECONCILE"`
 	CleanupOnly              bool       `json:"CLEANUP_ONLY"`
 	ForceApply               bool       `json:"FORCE_APPLY"`
-	// Alternative for iptables commands, apply nftables changes with nft CLI.
-	RunNFTables bool `json:"RUN_NFTABLES"`
+	NativeNftables           bool       `json:"NATIVE_NFTABLES"`
 }
 
 func (c *Config) String() string {

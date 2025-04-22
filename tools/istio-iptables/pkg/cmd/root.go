@@ -144,9 +144,9 @@ func bindCmdlineFlags(cfg *config.Config, cmd *cobra.Command) {
 	flag.BindEnv(fs, constants.ForceApply, "", "Apply iptables changes even if they appear to already be in place.",
 		&cfg.ForceApply)
 
-	// This mode is an alternative for iptables. It runs nftables commands instead.
-	flag.BindEnv(fs, constants.NFTablesBin, "", "Apply nftables changes with nft CLI.",
-		&cfg.RunNFTables)
+	// This mode is an alternative for iptables. It uses nftables rules for traffic redirection.
+	flag.BindEnv(fs, constants.NativeNftables, "", "Use native nftables instead of iptables rules.",
+		&cfg.NativeNftables)
 }
 
 func GetCommand(logOpts *log.Options) *cobra.Command {
@@ -226,8 +226,8 @@ func ProgramIptables(cfg *config.Config) error {
 }
 
 func ProgramNftables(cfg *config.Config) error {
-	if cfg.RunNFTables {
-		log.Info("running nft CLI from the knftables library")
+	if cfg.NativeNftables {
+		log.Info("native nftables enabled, using nft rules for traffic redirection.")
 		ext = &dep.NftablesDependencies{
 			NetworkNamespace: cfg.NetworkNamespace,
 		}
