@@ -143,6 +143,10 @@ func bindCmdlineFlags(cfg *config.Config, cmd *cobra.Command) {
 	// Consider removing it after several releases with no reported issues.
 	flag.BindEnv(fs, constants.ForceApply, "", "Apply iptables changes even if they appear to already be in place.",
 		&cfg.ForceApply)
+
+	// This mode is an alternative for iptables. It uses nftables rules for traffic redirection.
+	flag.BindEnv(fs, constants.NativeNftables, "", "Use native nftables instead of iptables rules.",
+		&cfg.NativeNftables)
 }
 
 func GetCommand(logOpts *log.Options) *cobra.Command {
@@ -164,7 +168,13 @@ func GetCommand(logOpts *log.Options) *cobra.Command {
 			if err := cfg.Validate(); err != nil {
 				handleErrorWithCode(err, 1)
 			}
-			if err := ProgramIptables(cfg); err != nil {
+
+			run := ProgramIptables
+			if cfg.NativeNftables {
+				run = ProgramNftables
+			}
+
+			if err := run(cfg); err != nil {
 				handleErrorWithCode(err, 1)
 			}
 
@@ -193,8 +203,9 @@ type IptablesError struct {
 	ExitCode int
 }
 
+var ext dep.Dependencies
+
 func ProgramIptables(cfg *config.Config) error {
-	var ext dep.Dependencies
 	if cfg.DryRun {
 		log.Info("running iptables in dry-run mode, no rule changes will be made")
 		ext = &dep.DependenciesStub{}
@@ -211,6 +222,25 @@ func ProgramIptables(cfg *config.Config) error {
 			return err
 		}
 		if err := iptConfigurator.Run(); err != nil {
+			return err
+		}
+		if err := capture.ConfigureRoutes(cfg); err != nil {
+			return fmt.Errorf("failed to configure routes: %v", err)
+		}
+	}
+	return nil
+}
+
+func ProgramNftables(cfg *config.Config) error {
+	log.Info("native nftables enabled, using nft rules for traffic redirection.")
+
+	if !cfg.SkipRuleApply {
+		nftConfigurator, err := capture.NewNftablesConfigurator(cfg)
+		if err != nil {
+			return err
+		}
+
+		if err := nftConfigurator.Run(); err != nil {
 			return err
 		}
 		if err := capture.ConfigureRoutes(cfg); err != nil {

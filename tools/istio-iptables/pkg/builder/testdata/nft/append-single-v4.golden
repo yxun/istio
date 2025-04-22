@@ -1,0 +1,2 @@
+add chain ip filter output
+add rule ip filter output ip daddr 127.0.0.8 drop

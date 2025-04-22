@@ -87,6 +87,34 @@ const (
 	Reconcile                 = "reconcile"
 	CleanupOnly               = "cleanup-only"
 	ForceApply                = "force-apply"
+	NativeNftables            = "native-nftables"
+)
+
+const (
+	// Table names used in sideCar mode when applying native nftables rules
+	ISTIO_PROXY_NAT_TABLE    = "istio-proxy-nat"
+	ISTIO_PROXY_MANGLE_TABLE = "istio-proxy-mangle"
+	ISTIO_PROXY_RAW_TABLE    = "istio-proxy-raw"
+
+	// Table names used in Ambient mode when applying native nftables rules
+	ISTIO_AMBIENT_NAT_TABLE    = "istio-ambient-nat"
+	ISTIO_AMBIENT_MANGLE_TABLE = "istio-ambient-mangle"
+	ISTIO_AMBIENT_RAW_TABLE    = "istio-ambient-raw"
+
+	// Base chains.
+	// TODO: Verify if we can completely avoid the following chains as base chains.
+	PREROUTING_CHAIN = "prerouting"
+	OUTPUT_CHAIN     = "output"
+
+	// Regular chains prefixed with "istio" to distinguish them from base chains
+	ISTIO_INBOUND_CHAIN     = "istio-inbound"
+	ISTIO_OUTPUT_CHAIN      = "istio-output"
+	ISTIO_OUTPUT_DNS_CHAIN  = "istio-output-dns"
+	ISTIO_REDIRECT_CHAIN    = "istio-redirect"
+	ISTIO_IN_REDIRECT_CHAIN = "istio-in-redirect"
+	ISTIO_DIVERT_CHAIN      = "istio-divert"
+	ISTIO_TPROXY_CHAIN      = "istio-tproxy"
+	ISTIO_PREROUTING_CHAIN  = "istio-prerouting"
 )
 
 // Environment variables that deliberately have no equivalent command-line flags.
@@ -155,4 +183,9 @@ const (
 	IPTables        IptablesCmd = iota
 	IPTablesSave    IptablesCmd = iota
 	IPTablesRestore IptablesCmd = iota
+)
+
+// Constants for nftables CLI
+const (
+	NFTablesBin = "nft"
 )

@@ -270,6 +270,23 @@ func testdoAddRunWithIptablesIntercept(t *testing.T, stdinData, testPodName, tes
 	}
 }
 
+func testdoAddRunWithNftablesIntercept(t *testing.T, stdinData, testPodName, testNSName string, objects ...runtime.Object) {
+	args := buildCmdArgs(stdinData, testPodName, testNSName)
+
+	conf, err := parseConfig(args.StdinData)
+	if err != nil {
+		t.Fatalf("config parse failed with error: %v", err)
+	}
+
+	// Create a kube client
+	client := kube.NewFakeClient(objects...)
+
+	err = doAddRun(args, conf, client.Kube(), NftablesInterceptRuleMgr())
+	if err != nil {
+		t.Fatalf("failed with error: %v", err)
+	}
+}
+
 func buildFakeDryRunPod() *corev1.Pod {
 	app := corev1.Container{Name: "test"}
 	proxy := corev1.Container{Name: "istio-proxy"}
