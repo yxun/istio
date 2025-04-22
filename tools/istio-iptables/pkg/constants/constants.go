@@ -157,3 +157,8 @@ const (
 	IPTablesSave    IptablesCmd = iota
 	IPTablesRestore IptablesCmd = iota
 )
+
+// Constants for nftables CLI
+const (
+	NFTablesBin = "nft"
+)
