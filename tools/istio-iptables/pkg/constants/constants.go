@@ -87,6 +87,7 @@ const (
 	Reconcile                 = "reconcile"
 	CleanupOnly               = "cleanup-only"
 	ForceApply                = "force-apply"
+	NativeNftables            = "native-nftables"
 )
 
 // Environment variables that deliberately have no equivalent command-line flags.
@@ -155,4 +156,9 @@ const (
 	IPTables        IptablesCmd = iota
 	IPTablesSave    IptablesCmd = iota
 	IPTablesRestore IptablesCmd = iota
+)
+
+// Constants for nftables CLI
+const (
+	NFTablesBin = "nft"
 )
