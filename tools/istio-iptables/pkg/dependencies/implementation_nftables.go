@@ -20,12 +20,16 @@ import (
 	"fmt"
 	"io"
 
+	"sigs.k8s.io/knftables"
+
 	"istio.io/istio/pkg/log"
 	"istio.io/istio/tools/istio-iptables/pkg/constants"
-	"sigs.k8s.io/knftables"
 )
 
-var testNFTRuleAdd = []string{"add", "rule", "ip", "filter", "INPUT", "ip", "protocol", "255", "counter", "drop", "comment", `"Istio no-op iptables capability probe"`}
+var testNFTRuleAdd = []string{
+	"add", "rule", "ip", "filter", "INPUT", "ip", "protocol", "255", "counter",
+	"drop", "comment", `"Istio no-op iptables capability probe"`,
+}
 
 // NftablesDependencies implementation of interface Dependencies, which is a wrapper of the knftables library
 type NftablesDependencies struct {
@@ -53,6 +57,7 @@ func (n *NftablesDependencies) Run(
 	return n.runNFT(logger, quietLogging, stdin, args...)
 }
 
+//nolint:unparam
 func (n *NftablesDependencies) runNFT(log *log.Scope, silenceErrors bool, stdin io.ReadSeeker, args ...string,
 ) (*bytes.Buffer, error) {
 	nft, err := knftables.New(n.TableFamily, n.TableName)
@@ -76,7 +81,7 @@ func (n *NftablesDependencies) runNFT(log *log.Scope, silenceErrors bool, stdin 
 
 	if err := nft.Run(n.ctx, tx); err != nil {
 		return nil, nil
-	} else {
-		return nil, err
 	}
+
+	return nil, err
 }
