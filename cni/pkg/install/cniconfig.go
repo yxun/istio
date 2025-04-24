@@ -38,6 +38,7 @@ func createCNIConfigFile(ctx context.Context, cfg *config.InstallConfig) (string
 		AmbientEnabled:    cfg.AmbientEnabled,
 		ExcludeNamespaces: strings.Split(cfg.ExcludeNamespaces, ","),
 		PodNamespace:      cfg.PodNamespace,
+		NativeNftables:    cfg.NativeNftables,
 	}
 
 	pluginConfig.Name = "istio-cni"
