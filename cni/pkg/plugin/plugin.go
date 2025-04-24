@@ -68,6 +68,7 @@ type Config struct {
 	AmbientEnabled    bool     `json:"ambient_enabled"`
 	ExcludeNamespaces []string `json:"exclude_namespaces"`
 	PodNamespace      string   `json:"pod_namespace"`
+	NativeNftables    bool     `json:"native_nftables"`
 }
 
 // K8sArgs is the valid CNI_ARGS used for Kubernetes
@@ -169,8 +170,14 @@ func CmdAdd(args *skel.CmdArgs) (err error) {
 	}
 
 	// Actually do the add
-	if err := doAddRun(args, conf, client, IptablesInterceptRuleMgr()); err != nil {
-		return err
+	if conf.NativeNftables {
+		if err := doAddRun(args, conf, client, NftablesInterceptRuleMgr()); err != nil {
+			return err
+		}
+	} else {
+		if err := doAddRun(args, conf, client, IptablesInterceptRuleMgr()); err != nil {
+			return err
+		}
 	}
 	return pluginResponse(conf)
 }

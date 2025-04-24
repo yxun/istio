@@ -121,6 +121,9 @@ type RepairConfig struct {
 	// Label and field selectors to select pods managed by race repair.
 	LabelSelectors string
 	FieldSelectors string
+
+	// Whether to repair pods by running nftables rules
+	NativeNftables bool
 }
 
 func (c InstallConfig) String() string {
@@ -170,5 +173,6 @@ func (c RepairConfig) String() string {
 	b.WriteString("InitExitCode: " + fmt.Sprint(c.InitExitCode) + "\n")
 	b.WriteString("LabelSelectors: " + c.LabelSelectors + "\n")
 	b.WriteString("FieldSelectors: " + c.FieldSelectors + "\n")
+	b.WriteString(("NativeNftables: " + fmt.Sprint(c.NativeNftables) + "\n"))
 	return b.String()
 }

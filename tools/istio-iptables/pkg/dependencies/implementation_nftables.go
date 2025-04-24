@@ -40,7 +40,7 @@ type NftablesDependencies struct {
 	TableName        string
 }
 
-// WIP: this method is in the Dependencies interface
+// TODO: this method is in the Dependencies interface. Need to replace it with a NftablesVersion
 func (n *NftablesDependencies) DetectIptablesVersion(ipv6 bool) (IptablesVersion, error) {
 	return IptablesVersion{}, nil
 }
@@ -57,6 +57,8 @@ func (n *NftablesDependencies) Run(
 	return n.runNFT(logger, quietLogging, stdin, args...)
 }
 
+// WIP: Compare this with the iptables executeXTables method. Implement knftables calls with Istio configurations.
+//
 //nolint:unparam
 func (n *NftablesDependencies) runNFT(log *log.Scope, silenceErrors bool, stdin io.ReadSeeker, args ...string,
 ) (*bytes.Buffer, error) {

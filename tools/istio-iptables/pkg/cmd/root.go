@@ -232,7 +232,7 @@ func ProgramIptables(cfg *config.Config) error {
 }
 
 func ProgramNftables(cfg *config.Config) error {
-	log.Info("SGM: ---> native nftables enabled, using nft rules for traffic redirection.")
+	log.Info("native nftables enabled, using nft rules for traffic redirection.")
 	ext = &dep.NftablesDependencies{
 		NetworkNamespace: cfg.NetworkNamespace,
 	}
