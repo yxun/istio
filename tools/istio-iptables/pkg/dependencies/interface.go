@@ -34,3 +34,9 @@ type Dependencies interface {
 	// might be returned on subsequent calls if the rules in the netnamespace have changed.
 	DetectIptablesVersion(ipV6 bool) (IptablesVersion, error)
 }
+
+// NativeNftablesDependencies is used as abstraction for the knftables library
+type NativeNftablesDependencies interface {
+	// Run runs a command
+	Run(log *istiolog.Scope, quietLogging bool, stdin io.ReadSeeker, args ...string) (*bytes.Buffer, error)
+}

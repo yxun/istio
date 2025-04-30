@@ -44,6 +44,13 @@ type IptablesConfigurator struct {
 	ipt6V dep.IptablesVersion
 }
 
+type NftablesConfigurator struct {
+	ruleBuilder *builder.NftablesRuleBuilder
+	// TODO(abhide): Fix dep.Dependencies with better interface
+	ext dep.Dependencies
+	cfg *config.Config
+}
+
 func NewIptablesConfigurator(cfg *config.Config, ext dep.Dependencies) (*IptablesConfigurator, error) {
 	iptVer, err := ext.DetectIptablesVersion(false)
 	if err != nil {
@@ -61,6 +68,14 @@ func NewIptablesConfigurator(cfg *config.Config, ext dep.Dependencies) (*Iptable
 		cfg:         cfg,
 		iptV:        iptVer,
 		ipt6V:       ipt6Ver,
+	}, nil
+}
+
+func NewNftablesConfigurator(cfg *config.Config, ext dep.Dependencies) (*NftablesConfigurator, error) {
+	return &NftablesConfigurator{
+		ruleBuilder: builder.NewNftablesRuleBuilder(cfg),
+		ext:         ext,
+		cfg:         cfg,
 	}, nil
 }
 
@@ -492,6 +507,23 @@ func (cfg *IptablesConfigurator) Run() error {
 			"-p", "tcp", "-i", "lo", "-m", "mark", "!", "--mark", constants.OutboundMark, "-j", "RETURN")
 	}
 	return cfg.executeCommands(&cfg.iptV, &cfg.ipt6V)
+}
+
+func (cfg *NftablesConfigurator) Run() error {
+	defer func() {
+		// Best effort since we don't know if the commands exist
+		if state, err := cfg.ext.Run(log.WithLabels(), true, constants.IPTablesSave, nil, nil); err == nil {
+			log.Infof("Final iptables state (IPv4):\n%s", state)
+		}
+		if cfg.cfg.EnableIPv6 {
+			if state, err := cfg.ext.Run(log.WithLabels(), true, constants.IPTablesSave, nil, nil); err == nil {
+				log.Infof("Final iptables state (IPv6):\n%s", state)
+			}
+		}
+	}()
+
+	// TBD
+	return nil
 }
 
 // SetupDNSRedir is a helper function to tackle with DNS UDP specific operations.

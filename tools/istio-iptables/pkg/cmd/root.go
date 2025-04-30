@@ -203,7 +203,10 @@ type IptablesError struct {
 	ExitCode int
 }
 
-var ext dep.Dependencies
+var (
+	ext dep.Dependencies
+	nft dep.NativeNftablesDependencies
+)
 
 func ProgramIptables(cfg *config.Config) error {
 	if cfg.DryRun {
@@ -233,8 +236,21 @@ func ProgramIptables(cfg *config.Config) error {
 
 func ProgramNftables(cfg *config.Config) error {
 	log.Info("native nftables enabled, using nft rules for traffic redirection.")
-	ext = &dep.NftablesDependencies{
+	nft = &dep.NftablesDependencies{
 		NetworkNamespace: cfg.NetworkNamespace,
+	}
+
+	if !cfg.SkipRuleApply {
+		nftConfigurator, err := capture.NewNftablesConfigurator(cfg, ext)
+		if err != nil {
+			return err
+		}
+		if err := nftConfigurator.Run(); err != nil {
+			return err
+		}
+		if err := capture.ConfigureRoutes(cfg); err != nil {
+			return fmt.Errorf("failed to configure routes: %v", err)
+		}
 	}
 	return nil
 }
