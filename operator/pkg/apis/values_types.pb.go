@@ -1796,12 +1796,12 @@ type GlobalConfig struct {
 	IpFamilyPolicy string `protobuf:"bytes,71,opt,name=ipFamilyPolicy,proto3" json:"ipFamilyPolicy,omitempty"`
 	// Specifies how waypoints are configured within Istio.
 	Waypoint *WaypointConfig `protobuf:"bytes,72,opt,name=waypoint,proto3" json:"waypoint,omitempty"`
-	// Specifies whether native nftables rules should be used instead of iptables rules for traffic redirection.
-	NativeNftables *wrapperspb.BoolValue `protobuf:"bytes,73,opt,name=nativeNftables,proto3" json:"nativeNftables,omitempty"` // The next available key is 74	
 	// Select a custom name for istiod's CA Root Cert ConfigMap.
-	TrustBundleName string `protobuf:"bytes,73,opt,name=trustBundleName,proto3" json:"trustBundleName,omitempty"` // The next available key is 74
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	TrustBundleName string `protobuf:"bytes,73,opt,name=trustBundleName,proto3" json:"trustBundleName,omitempty"`
+	// Specifies whether native nftables rules should be used instead of iptables rules for traffic redirection.
+	NativeNftables *wrapperspb.BoolValue `protobuf:"bytes,74,opt,name=nativeNftables,proto3" json:"nativeNftables,omitempty"` // The next available key is 75
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *GlobalConfig) Reset() {
@@ -2134,19 +2134,18 @@ func (x *GlobalConfig) GetWaypoint() *WaypointConfig {
 	return nil
 }
 
-<<<<<<< HEAD
 func (x *GlobalConfig) GetTrustBundleName() string {
 	if x != nil {
 		return x.TrustBundleName
 	}
 	return ""
-=======
+}
+
 func (x *GlobalConfig) GetNativeNftables() *wrapperspb.BoolValue {
 	if x != nil {
 		return x.NativeNftables
 	}
 	return nil
->>>>>>> b3521a11f8 (Add support for specifying nativeNftables during installation)
 }
 
 // Configuration for Security Token Service (STS) server.
@@ -5443,11 +5442,7 @@ const file_pkg_apis_values_types_proto_rawDesc = "" +
 	"\x14istio_ingressgateway\x18\x04 \x01(\v2-.istio.operator.v1alpha1.IngressGatewayConfigR\x14istio-ingressgateway\x12@\n" +
 	"\x0fsecurityContext\x18\n" +
 	" \x01(\v2\x16.google.protobuf.ValueR\x0fsecurityContext\x12>\n" +
-<<<<<<< HEAD
-	"\x0eseccompProfile\x18\f \x01(\v2\x16.google.protobuf.ValueR\x0eseccompProfile\"\xc7\x12\n" +
-=======
-	"\x0eseccompProfile\x18\f \x01(\v2\x16.google.protobuf.ValueR\x0eseccompProfile\"\xe1\x12\n" +
->>>>>>> b3521a11f8 (Add support for specifying nativeNftables during installation)
+	"\x0eseccompProfile\x18\f \x01(\v2\x16.google.protobuf.ValueR\x0eseccompProfile\"\x8b\x13\n" +
 	"\fGlobalConfig\x12;\n" +
 	"\x04arch\x18\x01 \x01(\v2#.istio.operator.v1alpha1.ArchConfigB\x02\x18\x01R\x04arch\x12 \n" +
 	"\vcertSigners\x18D \x03(\tR\vcertSigners\x12F\n" +
@@ -5494,13 +5489,9 @@ const file_pkg_apis_values_types_proto_rawDesc = "" +
 	"ipFamilies\x18F \x03(\tR\n" +
 	"ipFamilies\x12&\n" +
 	"\x0eipFamilyPolicy\x18G \x01(\tR\x0eipFamilyPolicy\x12C\n" +
-<<<<<<< HEAD
 	"\bwaypoint\x18H \x01(\v2'.istio.operator.v1alpha1.WaypointConfigR\bwaypoint\x12(\n" +
-	"\x0ftrustBundleName\x18I \x01(\tR\x0ftrustBundleName\"-\n" +
-=======
-	"\bwaypoint\x18H \x01(\v2'.istio.operator.v1alpha1.WaypointConfigR\bwaypoint\x12B\n" +
-	"\x0enativeNftables\x18I \x01(\v2\x1a.google.protobuf.BoolValueR\x0enativeNftables\"-\n" +
->>>>>>> b3521a11f8 (Add support for specifying nativeNftables during installation)
+	"\x0ftrustBundleName\x18I \x01(\tR\x0ftrustBundleName\x12B\n" +
+	"\x0enativeNftables\x18J \x01(\v2\x1a.google.protobuf.BoolValueR\x0enativeNftables\"-\n" +
 	"\tSTSConfig\x12 \n" +
 	"\vservicePort\x18\x01 \x01(\rR\vservicePort\"R\n" +
 	"\fIstiodConfig\x12B\n" +

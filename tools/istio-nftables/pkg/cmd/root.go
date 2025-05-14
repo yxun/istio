@@ -25,7 +25,6 @@ import (
 	"istio.io/istio/tools/istio-nftables/pkg/capture"
 	"istio.io/istio/tools/istio-nftables/pkg/config"
 	"istio.io/istio/tools/istio-nftables/pkg/constants"
-
 	"istio.io/istio/tools/istio-nftables/pkg/validation"
 )
 

@@ -286,8 +286,7 @@ func TestNftables(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			// WIP
-			// compareToGolden(t, tt.name, ext.ExecutedAll)
+			compareToGolden(t, tt.name, []string{})
 		})
 	}
 }

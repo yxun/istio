@@ -22,9 +22,8 @@ import (
 	"github.com/containernetworking/plugins/pkg/ns"
 
 	"istio.io/istio/pkg/log"
-	"istio.io/istio/tools/istio-iptables/pkg/cmd"
-	"istio.io/istio/tools/istio-iptables/pkg/config"
-	"istio.io/istio/tools/istio-iptables/pkg/dependencies"
+	"istio.io/istio/tools/istio-nftables/pkg/cmd"
+	"istio.io/istio/tools/istio-nftables/pkg/config"
 )
 
 // Program defines a method which programs nftables based on the parameters
@@ -45,7 +44,6 @@ func (nft *nftables) Program(podName, netns string, rdrct *Redirect) error {
 	cfg.OutboundPortsInclude = rdrct.includeOutboundPorts
 	cfg.OutboundIPRangesExclude = rdrct.excludeIPCidrs
 	cfg.RerouteVirtualInterfaces = rdrct.rerouteVirtualInterfaces
-	cfg.DryRun = dependencies.DryRunFilePath.Get() != ""
 	cfg.RedirectDNS = rdrct.dnsRedirect
 	cfg.CaptureAllDNS = rdrct.dnsRedirect
 	cfg.DropInvalid = rdrct.invalidDrop

@@ -22,30 +22,30 @@ import (
 
 const (
 	// Table names used in sideCar mode when applying native nftables rules
-	ISTIO_PROXY_NAT_TABLE    = "ISTIO_PROXY_NAT"
-	ISTIO_PROXY_MANGLE_TABLE = "ISTIO_PROXY_MANGLE"
-	ISTIO_PROXY_RAW_TABLE    = "ISTIO_PROXY_RAW"
+	IstioProxyNatTable    = "ISTIO_PROXY_NAT"
+	IstioProxyMangleTable = "ISTIO_PROXY_MANGLE"
+	IstioProxyRawTable    = "ISTIO_PROXY_RAW"
 
 	// Table names used in Ambient mode when applying native nftables rules
-	ISTIO_AMBIENT_NAT_TABLE    = "ISTIO_AMBIENT_NAT"
-	ISTIO_AMBIENT_MANGLE_TABLE = "ISTIO_AMBIENT_MANGLE"
-	ISTIO_AMBIENT_RAW_TABLE    = "ISTIO_AMBIENT_RAW"
+	IstioAmbientNatTable    = "ISTIO_AMBIENT_NAT"
+	IstioAmbientMangleTable = "ISTIO_AMBIENT_MANGLE"
+	IstioAmbientRawTable    = "ISTIO_AMBIENT_RAW"
 
 	// Base chains.
 	// TODO: Verify if we can completely avoid the following chains as base chains.
-	PREROUTING_CHAIN = "PREROUTING"
-	OUTPUT_CHAIN     = "OUTPUT"
+	PreroutingChain = "PREROUTING"
+	OutputChain     = "OUTPUT"
 
 	// Regular chains prefixed with "istio" to distinguish them from base chains
-	ISTIO_INBOUND_CHAIN     = "ISTIO_INBOUND"
-	ISTIO_OUTPUT_CHAIN      = "ISTIO_OUTPUT"
-	ISTIO_OUTPUT_DNS_CHAIN  = "ISTIO_OUTPUT_DNS"
-	ISTIO_REDIRECT_CHAIN    = "ISTIO_REDIRECT"
-	ISTIO_IN_REDIRECT_CHAIN = "ISTIO_IN_REDIRECT"
-	ISTIO_DIVERT_CHAIN      = "ISTIO_DIVERT"
-	ISTIO_TPROXY_CHAIN      = "ISTIO_TPROXY"
-	ISTIO_PREROUTING_CHAIN  = "ISTIO_PREROUTING"
-	ISTIO_DROP_CHAIN        = "ISTIO_DROP"
+	IstioInboundChain    = "ISTIO_INBOUND"
+	IstioOutputChain     = "ISTIO_OUTPUT"
+	IstioOutputDNSChain  = "ISTIO_OUTPUT_DNS"
+	IstioRedirectChain   = "ISTIO_REDIRECT"
+	IstioInRedirectChain = "ISTIO_IN_REDIRECT"
+	IstioDivertChain     = "ISTIO_DIVERT"
+	IstioTproxyChain     = "ISTIO_TPROXY"
+	IstioPreroutingChain = "ISTIO_PREROUTING"
+	IstioDropChain       = "ISTIO_DROP"
 )
 
 const (

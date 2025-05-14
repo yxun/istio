@@ -17,52 +17,49 @@ package builder
 import (
 	"strings"
 
+	knft "sigs.k8s.io/knftables"
+
 	"istio.io/istio/pkg/log"
 	"istio.io/istio/tools/istio-nftables/pkg/config"
 	"istio.io/istio/tools/istio-nftables/pkg/constants"
-
-	knft "sigs.k8s.io/knftables"
 )
 
-var ISITO_TABLE_NAMES = []string{
-	constants.ISTIO_PROXY_NAT_TABLE, constants.ISTIO_PROXY_MANGLE_TABLE, constants.ISTIO_PROXY_RAW_TABLE,
+var IstioTableNames = []string{
+	constants.IstioProxyNatTable, constants.IstioProxyMangleTable, constants.IstioProxyRawTable,
 }
 
-var ISTIO_CHAIN_NAMES = []string{
-	constants.ISTIO_INBOUND_CHAIN, constants.ISTIO_OUTPUT_CHAIN, constants.ISTIO_OUTPUT_DNS_CHAIN, constants.ISTIO_REDIRECT_CHAIN,
-	constants.ISTIO_IN_REDIRECT_CHAIN, constants.ISTIO_DIVERT_CHAIN, constants.ISTIO_TPROXY_CHAIN, constants.ISTIO_PREROUTING_CHAIN,
+var IstioChainNames = []string{
+	constants.IstioInboundChain, constants.IstioOutputChain, constants.IstioOutputDNSChain, constants.IstioRedirectChain,
+	constants.IstioInRedirectChain, constants.IstioDivertChain, constants.IstioTproxyChain, constants.IstioPreroutingChain,
 }
 
-var ISTIO_TABLE_NAMES = []string{"nat", "mangle", "raw"}
-
-type NftablesChainBuilder struct {
+type NFTablesChainBuilder struct {
 	Chains map[string][]knft.Chain
 	cfg    *config.Config
 }
 
 type NftablesRuleBuilder struct {
-	RulesV4 map[string][]knft.Rule
-	RulesV6 map[string][]knft.Rule
-	cfg     *config.Config
+	Rules map[string][]knft.Rule
+	cfg   *config.Config
 }
 
-func NewNftablesChainBuilder(cfg *config.Config) *NftablesChainBuilder {
+func NewNftablesChainBuilder(cfg *config.Config) *NFTablesChainBuilder {
 	if cfg == nil {
 		cfg = &config.Config{}
 	}
 
 	chains := make(map[string][]knft.Chain)
-	for _, table := range ISTIO_TABLE_NAMES {
+	for _, table := range IstioTableNames {
 		chains[table] = []knft.Chain{}
 	}
-	return &NftablesChainBuilder{
+	return &NFTablesChainBuilder{
 		Chains: chains,
 		cfg:    cfg,
 	}
 }
 
-func (rb *NftablesChainBuilder) AddBaseChains(table string) *NftablesChainBuilder {
-	for _, name := range ISITO_TABLE_NAMES {
+func (rb *NFTablesChainBuilder) AddBaseChains(table string) *NFTablesChainBuilder {
+	for _, name := range IstioTableNames {
 		rb.Chains[table] = append(rb.Chains[table], knft.Chain{
 			Name: name,
 		})
@@ -70,8 +67,8 @@ func (rb *NftablesChainBuilder) AddBaseChains(table string) *NftablesChainBuilde
 	return rb
 }
 
-func (rb *NftablesChainBuilder) AddIstioChains(table string) *NftablesChainBuilder {
-	for _, name := range ISTIO_CHAIN_NAMES {
+func (rb *NFTablesChainBuilder) AddIstioChains(table string) *NFTablesChainBuilder {
+	for _, name := range IstioChainNames {
 		rb.Chains[table] = append(rb.Chains[table], knft.Chain{
 			Name: name,
 		})
@@ -79,7 +76,7 @@ func (rb *NftablesChainBuilder) AddIstioChains(table string) *NftablesChainBuild
 	return rb
 }
 
-func (rb *NftablesChainBuilder) UpdateBaseChains(table string) *NftablesChainBuilder {
+func (rb *NFTablesChainBuilder) UpdateBaseChains(table string) *NFTablesChainBuilder {
 	for _, chain := range rb.Chains[table] {
 		switch chain.Name {
 		case "PREROUTING":
@@ -109,26 +106,22 @@ func NewNftablesRuleBuilder(cfg *config.Config) *NftablesRuleBuilder {
 	if cfg == nil {
 		cfg = &config.Config{}
 	}
-	rulesv4 := make(map[string][]knft.Rule)
-	rulesv6 := make(map[string][]knft.Rule)
-	for _, table := range ISTIO_TABLE_NAMES {
-		rulesv4[table] = []knft.Rule{}
-		rulesv6[table] = []knft.Rule{}
+	rules := make(map[string][]knft.Rule)
+	for _, table := range IstioTableNames {
+		rules[table] = []knft.Rule{}
 	}
 	return &NftablesRuleBuilder{
-		RulesV4: rulesv4,
-		RulesV6: rulesv6,
-		cfg:     cfg,
+		Rules: rules,
+		cfg:   cfg,
 	}
 }
 
 func (rb *NftablesRuleBuilder) InsertRule(chain string, table string, position int, params ...string) *NftablesRuleBuilder {
-	rb.InsertRuleV4(chain, table, position, params...)
-	rb.InsertRuleV6(chain, table, position, params...)
-	return rb
+	rules := rb.Rules[table]
+	return rb.insertInternal(&rules, chain, position, params...)
 }
 
-func (rb *NftablesRuleBuilder) insertInternal(ipt *[]knft.Rule, chain string, table string, position int, params ...string) *NftablesRuleBuilder {
+func (rb *NftablesRuleBuilder) insertInternal(ipt *[]knft.Rule, chain string, position int, params ...string) *NftablesRuleBuilder {
 	*ipt = append(*ipt, knft.Rule{
 		Chain: chain,
 		Rule:  strings.Join(params, " "),
@@ -141,19 +134,6 @@ func (rb *NftablesRuleBuilder) insertInternal(ipt *[]knft.Rule, chain string, ta
 	return rb
 }
 
-func (rb *NftablesRuleBuilder) InsertRuleV4(chain string, table string, position int, params ...string) *NftablesRuleBuilder {
-	rulesv4 := rb.RulesV4[table]
-	return rb.insertInternal(&rulesv4, chain, table, position, params...)
-}
-
-func (rb *NftablesRuleBuilder) InsertRuleV6(chain string, table string, position int, params ...string) *NftablesRuleBuilder {
-	if !rb.cfg.EnableIPv6 {
-		return rb
-	}
-	rulesv6 := rb.RulesV6[table]
-	return rb.insertInternal(&rulesv6, chain, table, position, params...)
-}
-
 func indexOf(element string, data []string) int {
 	for k, v := range data {
 		if element == v {
@@ -163,7 +143,12 @@ func indexOf(element string, data []string) int {
 	return -1 // not found.
 }
 
-func (rb *NftablesRuleBuilder) appendInternal(ipt *[]knft.Rule, chain string, table string, params ...string) *NftablesRuleBuilder {
+func (rb *NftablesRuleBuilder) AppendRule(chain string, table string, params ...string) *NftablesRuleBuilder {
+	rules := rb.Rules[table]
+	return rb.appendInternal(&rules, chain, params...)
+}
+
+func (rb *NftablesRuleBuilder) appendInternal(ipt *[]knft.Rule, chain string, params ...string) *NftablesRuleBuilder {
 	idx := indexOf("jump", params)
 	if idx < 0 && !strings.HasPrefix(chain, "ISTIO_") {
 		log.Warnf("Appending non-jump rule in non-Istio chain (rule: %s) \n", strings.Join(params, " "))
@@ -175,30 +160,11 @@ func (rb *NftablesRuleBuilder) appendInternal(ipt *[]knft.Rule, chain string, ta
 	return rb
 }
 
-func (rb *NftablesRuleBuilder) AppendRuleV4(chain string, table string, params ...string) *NftablesRuleBuilder {
-	rulesv4 := rb.RulesV4[table]
-	return rb.appendInternal(&rulesv4, chain, table, params...)
-}
-
-func (rb *NftablesRuleBuilder) AppendRule(chain string, table string, params ...string) *NftablesRuleBuilder {
-	rb.AppendRuleV4(chain, table, params...)
-	rb.AppendRuleV6(chain, table, params...)
-	return rb
-}
-
-func (rb *NftablesRuleBuilder) AppendRuleV6(chain string, table string, params ...string) *NftablesRuleBuilder {
-	if !rb.cfg.EnableIPv6 {
-		return rb
-	}
-	rulesv6 := rb.RulesV6[table]
-	return rb.appendInternal(&rulesv6, chain, table, params...)
-}
-
 // AppendVersionedRule is a wrapper around AppendRule that substitutes an ipv4/ipv6 specific value
 // in place in the params. This allows appending a dual-stack rule that has an IP value in it.
 func (rb *NftablesRuleBuilder) AppendVersionedRule(ipv4 string, ipv6 string, chain string, table string, params ...string) {
-	rb.AppendRuleV4(chain, table, replaceVersionSpecific(ipv4, params...)...)
-	rb.AppendRuleV6(chain, table, replaceVersionSpecific(ipv6, params...)...)
+	rb.AppendRule(chain, table, replaceVersionSpecific(ipv4, params...)...)
+	rb.AppendRule(chain, table, replaceVersionSpecific(ipv6, params...)...)
 }
 
 func replaceVersionSpecific(contents string, inputs ...string) []string {
