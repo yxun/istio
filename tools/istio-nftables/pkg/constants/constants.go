@@ -18,18 +18,34 @@ import (
 	"time"
 
 	"istio.io/istio/pkg/env"
-	"istio.io/istio/pkg/util/sets"
 )
 
-var BuiltInChainsAndTargetsMap = sets.New(
-	"INPUT",
-	"OUTPUT",
-	"FORWARD",
-	"PREROUTING",
-	"POSTROUTING",
-	"ACCEPT",
-	"RETURN",
-	"DROP",
+const (
+	// Table names used in sideCar mode when applying native nftables rules
+	ISTIO_PROXY_NAT_TABLE    = "ISTIO_PROXY_NAT"
+	ISTIO_PROXY_MANGLE_TABLE = "ISTIO_PROXY_MANGLE"
+	ISTIO_PROXY_RAW_TABLE    = "ISTIO_PROXY_RAW"
+
+	// Table names used in Ambient mode when applying native nftables rules
+	ISTIO_AMBIENT_NAT_TABLE    = "ISTIO_AMBIENT_NAT"
+	ISTIO_AMBIENT_MANGLE_TABLE = "ISTIO_AMBIENT_MANGLE"
+	ISTIO_AMBIENT_RAW_TABLE    = "ISTIO_AMBIENT_RAW"
+
+	// Base chains.
+	// TODO: Verify if we can completely avoid the following chains as base chains.
+	PREROUTING_CHAIN = "PREROUTING"
+	OUTPUT_CHAIN     = "OUTPUT"
+
+	// Regular chains prefixed with "istio" to distinguish them from base chains
+	ISTIO_INBOUND_CHAIN     = "ISTIO_INBOUND"
+	ISTIO_OUTPUT_CHAIN      = "ISTIO_OUTPUT"
+	ISTIO_OUTPUT_DNS_CHAIN  = "ISTIO_OUTPUT_DNS"
+	ISTIO_REDIRECT_CHAIN    = "ISTIO_REDIRECT"
+	ISTIO_IN_REDIRECT_CHAIN = "ISTIO_IN_REDIRECT"
+	ISTIO_DIVERT_CHAIN      = "ISTIO_DIVERT"
+	ISTIO_TPROXY_CHAIN      = "ISTIO_TPROXY"
+	ISTIO_PREROUTING_CHAIN  = "ISTIO_PREROUTING"
+	ISTIO_DROP_CHAIN        = "ISTIO_DROP"
 )
 
 const (
@@ -41,18 +57,6 @@ const (
 // In TPROXY mode, mark the packet from envoy outbound to app by podIP,
 // this is to prevent it being intercepted to envoy inbound listener.
 const OutboundMark = "1338"
-
-// iptables chains
-const (
-	ISTIOOUTPUT     = "ISTIO_OUTPUT"
-	ISTIOOUTPUTDNS  = "ISTIO_OUTPUT_DNS"
-	ISTIOINBOUND    = "ISTIO_INBOUND"
-	ISTIODIVERT     = "ISTIO_DIVERT"
-	ISTIOTPROXY     = "ISTIO_TPROXY"
-	ISTIOREDIRECT   = "ISTIO_REDIRECT"
-	ISTIOINREDIRECT = "ISTIO_IN_REDIRECT"
-	ISTIODROP       = "ISTIO_DROP"
-)
 
 // Constants used in cobra/viper CLI
 const (
@@ -73,10 +77,10 @@ const (
 	ProxyGID                  = "proxy-gid"
 	RerouteVirtualInterfaces  = "kube-virt-interfaces"
 	DryRun                    = "dry-run"
-	TraceLogging              = "iptables-trace-logging"
+	TraceLogging              = "nftables-trace-logging"
 	SkipRuleApply             = "skip-rule-apply"
 	RunValidation             = "run-validation"
-	IptablesProbePort         = "iptables-probe-port"
+	NftablesProbePort         = "nftables-probe-port"
 	ProbeTimeout              = "probe-timeout"
 	RedirectDNS               = "redirect-dns"
 	DropInvalid               = "drop-invalid"
@@ -87,6 +91,7 @@ const (
 	Reconcile                 = "reconcile"
 	CleanupOnly               = "cleanup-only"
 	ForceApply                = "force-apply"
+	NativeNftables            = "native-nftables"
 )
 
 // Environment variables that deliberately have no equivalent command-line flags.
@@ -132,7 +137,7 @@ const (
 )
 
 const (
-	DefaultIptablesProbePortUint = 15002
+	DefaultNftablesProbePortUint = 15002
 	DefaultProbeTimeout          = 5 * time.Second
 )
 
@@ -146,13 +151,7 @@ const (
 	IstioAgentDNSListenerPort = "15053"
 )
 
-// type of iptables operation/command to run, as an enum
-// the implementation will choose the correct underlying binary,
-// so callers should just use these enums to indicate what they want to do.
-type IptablesCmd int
-
+// Constants for nftables CLI
 const (
-	IPTables        IptablesCmd = iota
-	IPTablesSave    IptablesCmd = iota
-	IPTablesRestore IptablesCmd = iota
+	NFTablesBin = "nft"
 )

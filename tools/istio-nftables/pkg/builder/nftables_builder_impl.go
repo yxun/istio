@@ -18,15 +18,19 @@ import (
 	"strings"
 
 	"istio.io/istio/pkg/log"
-	"istio.io/istio/tools/istio-iptables/pkg/config"
-	"istio.io/istio/tools/istio-iptables/pkg/constants"
+	"istio.io/istio/tools/istio-nftables/pkg/config"
+	"istio.io/istio/tools/istio-nftables/pkg/constants"
 
 	knft "sigs.k8s.io/knftables"
 )
 
+var ISITO_TABLE_NAMES = []string{
+	constants.ISTIO_PROXY_NAT_TABLE, constants.ISTIO_PROXY_MANGLE_TABLE, constants.ISTIO_PROXY_RAW_TABLE,
+}
+
 var ISTIO_CHAIN_NAMES = []string{
-	constants.ISTIOOUTPUT, constants.ISTIOOUTPUTDNS, constants.ISTIOINBOUND, constants.ISTIODIVERT,
-	constants.ISTIOTPROXY, constants.ISTIOREDIRECT, constants.ISTIOINREDIRECT, constants.ISTIODROP,
+	constants.ISTIO_INBOUND_CHAIN, constants.ISTIO_OUTPUT_CHAIN, constants.ISTIO_OUTPUT_DNS_CHAIN, constants.ISTIO_REDIRECT_CHAIN,
+	constants.ISTIO_IN_REDIRECT_CHAIN, constants.ISTIO_DIVERT_CHAIN, constants.ISTIO_TPROXY_CHAIN, constants.ISTIO_PREROUTING_CHAIN,
 }
 
 var ISTIO_TABLE_NAMES = []string{"nat", "mangle", "raw"}
@@ -58,7 +62,7 @@ func NewNftablesChainBuilder(cfg *config.Config) *NftablesChainBuilder {
 }
 
 func (rb *NftablesChainBuilder) AddBaseChains(table string) *NftablesChainBuilder {
-	for name := range constants.BuiltInChainsAndTargetsMap {
+	for _, name := range ISITO_TABLE_NAMES {
 		rb.Chains[table] = append(rb.Chains[table], knft.Chain{
 			Name: name,
 		})
@@ -150,7 +154,14 @@ func (rb *NftablesRuleBuilder) InsertRuleV6(chain string, table string, position
 	return rb.insertInternal(&rulesv6, chain, table, position, params...)
 }
 
-// function indexOf(element string, data []string)int is defined in iptables_builder)impl.go
+func indexOf(element string, data []string) int {
+	for k, v := range data {
+		if element == v {
+			return k
+		}
+	}
+	return -1 // not found.
+}
 
 func (rb *NftablesRuleBuilder) appendInternal(ipt *[]knft.Rule, chain string, table string, params ...string) *NftablesRuleBuilder {
 	idx := indexOf("jump", params)
@@ -190,4 +201,14 @@ func (rb *NftablesRuleBuilder) AppendVersionedRule(ipv4 string, ipv6 string, cha
 	rb.AppendRuleV6(chain, table, replaceVersionSpecific(ipv6, params...)...)
 }
 
-// function replaceVersionSpecific(contents string, inputs ...string)[]string is defined in iptables_builder_impl.go
+func replaceVersionSpecific(contents string, inputs ...string) []string {
+	res := make([]string, 0, len(inputs))
+	for _, i := range inputs {
+		if i == constants.IPVersionSpecific {
+			res = append(res, contents)
+		} else {
+			res = append(res, i)
+		}
+	}
+	return res
+}

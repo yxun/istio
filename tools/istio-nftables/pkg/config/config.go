@@ -29,7 +29,7 @@ import (
 	"istio.io/istio/pkg/env"
 	"istio.io/istio/pkg/log"
 	netutil "istio.io/istio/pkg/util/net"
-	"istio.io/istio/tools/istio-iptables/pkg/constants"
+	"istio.io/istio/tools/istio-nftables/pkg/constants"
 )
 
 func DefaultConfig() *Config {
@@ -39,7 +39,7 @@ func DefaultConfig() *Config {
 		InboundTunnelPort:       "15008",
 		InboundTProxyMark:       "1337",
 		InboundTProxyRouteTable: "133",
-		IptablesProbePort:       constants.DefaultIptablesProbePortUint,
+		NftablesProbePort:       constants.DefaultNftablesProbePortUint,
 		ProbeTimeout:            constants.DefaultProbeTimeout,
 		OwnerGroupsInclude:      constants.OwnerGroupsInclude.DefaultValue,
 		OwnerGroupsExclude:      constants.OwnerGroupsExclude.DefaultValue,
@@ -68,7 +68,7 @@ type Config struct {
 	OutboundIPRangesExclude  string        `json:"OUTBOUND_IPRANGES_EXCLUDE"`
 	RerouteVirtualInterfaces string        `json:"KUBE_VIRT_INTERFACES"`
 	ExcludeInterfaces        string        `json:"EXCLUDE_INTERFACES"`
-	IptablesProbePort        uint16        `json:"IPTABLES_PROBE_PORT"`
+	NftablesProbePort        uint16        `json:"NFTABLES_PROBE_PORT"`
 	ProbeTimeout             time.Duration `json:"PROBE_TIMEOUT"`
 	DryRun                   bool          `json:"DRY_RUN"`
 	SkipRuleApply            bool          `json:"SKIP_RULE_APPLY"`
@@ -81,7 +81,7 @@ type Config struct {
 	DNSServersV6             []string      `json:"DNS_SERVERS_V6"`
 	NetworkNamespace         string        `json:"NETWORK_NAMESPACE"`
 	// When running in host filesystem, we have different semantics around the environment.
-	// For instance, we would have a node-shared IPTables lock, despite not needing it.
+	// For instance, we would have a node-shared NFTables lock, despite not needing it.
 	// HostFilesystemPodNetwork indicates we are in this mode, typically from the CNI.
 	HostFilesystemPodNetwork bool       `json:"CNI_MODE"`
 	DualStack                bool       `json:"DUAL_STACK"`
@@ -90,6 +90,7 @@ type Config struct {
 	Reconcile                bool       `json:"RECONCILE"`
 	CleanupOnly              bool       `json:"CLEANUP_ONLY"`
 	ForceApply               bool       `json:"FORCE_APPLY"`
+	NativeNftables           bool       `json:"NATIVE_NFTABLES"`
 }
 
 func (c *Config) String() string {
@@ -136,7 +137,7 @@ func (c *Config) Print() {
 	b.WriteString(fmt.Sprintf("RECONCILE=%t\n", c.Reconcile))
 	b.WriteString(fmt.Sprintf("CLEANUP_ONLY=%t\n", c.CleanupOnly))
 	b.WriteString(fmt.Sprintf("FORCE_APPLY=%t\n", c.ForceApply))
-	log.Infof("Istio iptables variables:\n%s", b.String())
+	log.Infof("Istio nftables variables:\n%s", b.String())
 }
 
 func (c *Config) Validate() error {

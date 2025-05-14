@@ -171,8 +171,8 @@ func isIstioJump(rule string) bool {
 	// Split the rule into fields
 	fields := strings.Fields(rule)
 	for i, field := range fields {
-		// Check for --jump or -j in iptables commands. Check for 'jump' in nft commands.
-		if field == "--jump" || field == "-j" || field == "jump" {
+		// Check for --jump or -j
+		if field == "--jump" || field == "-j" {
 			// Check if there's a next field (the target)
 			if i+1 < len(fields) {
 				target := strings.Trim(fields[i+1], "'\"")

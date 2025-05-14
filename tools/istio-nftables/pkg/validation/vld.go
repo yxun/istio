@@ -12,4 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package dependencies
+package validation
+
+import (
+	"encoding/binary"
+	"unsafe"
+)
+
+var nativeByteOrder binary.ByteOrder
+
+func init() {
+	var x uint16 = 0x0102
+	lowerByte := *(*byte)(unsafe.Pointer(&x))
+	switch lowerByte {
+	case 0x01:
+		nativeByteOrder = binary.BigEndian
+	case 0x02:
+		nativeByteOrder = binary.LittleEndian
+	default:
+		panic("Could not determine native byte order.")
+	}
+}
+
+// <arpa/inet.h>
+func ntohs(n16 uint16) uint16 {
+	if nativeByteOrder == binary.BigEndian {
+		return n16
+	}
+	return (n16&0xff00)>>8 | (n16&0xff)<<8
+}
