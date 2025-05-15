@@ -31,7 +31,6 @@ import (
 type NftablesConfigurator struct {
 	cfg              *config.Config
 	NetworkNamespace string
-	chainBuilder     *builder.NFTablesChainBuilder
 	ruleBuilder      *builder.NftablesRuleBuilder
 }
 
@@ -49,7 +48,6 @@ func NewNftablesConfigurator(cfg *config.Config) (*NftablesConfigurator, error) 
 	return &NftablesConfigurator{
 		cfg:              cfg,
 		NetworkNamespace: cfg.NetworkNamespace,
-		chainBuilder:     builder.NewNftablesChainBuilder(cfg),
 		ruleBuilder:      builder.NewNftablesRuleBuilder(cfg),
 	}, nil
 }
@@ -734,6 +732,157 @@ func (cfg *NftablesConfigurator) handleCaptureByOwnerGroup(filter config.Interce
 	}
 }
 
+func (cfg *NftablesConfigurator) addIstioNatTableRules() error {
+	// Get knftables interface
+	nft, err := knftables.New(knftables.InetFamily, constants.IstioProxyNatTable)
+	if err != nil {
+		return err
+	}
+	tx := nft.NewTransaction()
+	// Ensure that our table exists.
+	tx.Add(&knftables.Table{
+		Comment: knftables.PtrTo(""),
+	})
+
+	// Ensure that our chains exist
+	tx.Add(&knftables.Chain{
+		Name:     constants.PreroutingChain,
+		Comment:  knftables.PtrTo(""),
+		Type:     knftables.PtrTo(knftables.NATType),
+		Hook:     knftables.PtrTo(knftables.PreroutingHook),
+		Priority: knftables.PtrTo(knftables.DNATPriority),
+	})
+	tx.Add(&knftables.Chain{
+		Name:     constants.OutputChain,
+		Comment:  knftables.PtrTo(""),
+		Type:     knftables.PtrTo(knftables.NATType),
+		Hook:     knftables.PtrTo(knftables.OutputHook),
+		Priority: knftables.PtrTo(knftables.DNATPriority),
+	})
+	tx.Add(&knftables.Chain{
+		Name:    constants.IstioInboundChain,
+		Comment: knftables.PtrTo(""),
+	})
+	tx.Add(&knftables.Chain{
+		Name:    constants.IstioRedirectChain,
+		Comment: knftables.PtrTo(""),
+	})
+	tx.Add(&knftables.Chain{
+		Name:    constants.IstioInRedirectChain,
+		Comment: knftables.PtrTo(""),
+	})
+	tx.Add(&knftables.Chain{
+		Name:    constants.IstioOutputChain,
+		Comment: knftables.PtrTo(""),
+	})
+	tx.Add(&knftables.Chain{
+		Name:    constants.IstioOutputDNSChain,
+		Comment: knftables.PtrTo(""),
+	})
+
+	// Add NAT table rules
+	for _, rule := range cfg.ruleBuilder.Rules[constants.IstioProxyNatTable] {
+		tx.Add(&rule)
+	}
+
+	// Apply changes in this transaction
+	return nft.Run(context.TODO(), tx)
+}
+
+func (cfg *NftablesConfigurator) addIstioMangleTableRules() error {
+	// Get knftables interface
+	nft, err := knftables.New(knftables.InetFamily, constants.IstioProxyMangleTable)
+	if err != nil {
+		return err
+	}
+	tx := nft.NewTransaction()
+	// Ensure that our table exists.
+	tx.Add(&knftables.Table{
+		Comment: knftables.PtrTo(""),
+	})
+
+	// Ensure that our chains exist
+	tx.Add(&knftables.Chain{
+		Name:     constants.PreroutingChain,
+		Comment:  knftables.PtrTo(""),
+		Type:     knftables.PtrTo(knftables.FilterType),
+		Hook:     knftables.PtrTo(knftables.PreroutingHook),
+		Priority: knftables.PtrTo(knftables.ManglePriority),
+	})
+	tx.Add(&knftables.Chain{
+		Name:     constants.OutputChain,
+		Comment:  knftables.PtrTo(""),
+		Type:     knftables.PtrTo(knftables.FilterType),
+		Hook:     knftables.PtrTo(knftables.OutputHook),
+		Priority: knftables.PtrTo(knftables.ManglePriority),
+	})
+	tx.Add(&knftables.Chain{
+		Name:    constants.IstioDivertChain,
+		Comment: knftables.PtrTo(""),
+	})
+	tx.Add(&knftables.Chain{
+		Name:    constants.IstioTproxyChain,
+		Comment: knftables.PtrTo(""),
+	})
+	tx.Add(&knftables.Chain{
+		Name:    constants.IstioInboundChain,
+		Comment: knftables.PtrTo(""),
+	})
+
+	// Add Mangle table rules
+	for _, rule := range cfg.ruleBuilder.Rules[constants.IstioProxyMangleTable] {
+		tx.Add(&rule)
+	}
+
+	// Apply changes in this transaction
+	return nft.Run(context.TODO(), tx)
+}
+
+func (cfg *NftablesConfigurator) addIstioRawTableRules() error {
+	// Get knftables interface
+	nft, err := knftables.New(knftables.InetFamily, constants.IstioProxyRawTable)
+	if err != nil {
+		return err
+	}
+	tx := nft.NewTransaction()
+	// Ensure that our table exists.
+	tx.Add(&knftables.Table{
+		Comment: knftables.PtrTo(""),
+	})
+
+	// Ensure that our chains exist
+	tx.Add(&knftables.Chain{
+		Name:     constants.PreroutingChain,
+		Comment:  knftables.PtrTo(""),
+		Type:     knftables.PtrTo(knftables.FilterType),
+		Hook:     knftables.PtrTo(knftables.PreroutingHook),
+		Priority: knftables.PtrTo(knftables.RawPriority),
+	})
+	tx.Add(&knftables.Chain{
+		Name:     constants.OutputChain,
+		Comment:  knftables.PtrTo(""),
+		Type:     knftables.PtrTo(knftables.FilterType),
+		Hook:     knftables.PtrTo(knftables.OutputHook),
+		Priority: knftables.PtrTo(knftables.RawPriority),
+	})
+	tx.Add(&knftables.Chain{
+		Name:    constants.IstioInboundChain,
+		Comment: knftables.PtrTo(""),
+	})
+	tx.Add(&knftables.Chain{
+		Name:    constants.IstioOutputDNSChain,
+		Comment: knftables.PtrTo(""),
+	})
+
+	// Add RAW table rules
+	for _, rule := range cfg.ruleBuilder.Rules[constants.IstioProxyRawTable] {
+		tx.Add(&rule)
+	}
+
+	// Apply changes in this transaction
+	return nft.Run(context.TODO(), tx)
+}
+
 func (cfg *NftablesConfigurator) executeCommands() error {
 	// We require (or rather, knftables.New does) that the nft binary be version 1.0.1
 	// or later, because versions before that would always attempt to parse the entire
@@ -742,34 +891,15 @@ func (cfg *NftablesConfigurator) executeCommands() error {
 	// types in ways that triggered bugs in older versions of nft, causing them to
 	// crash.
 
-	for table, chains := range cfg.chainBuilder.Chains {
-		nft, err := knftables.New(knftables.IPv4Family, table)
-		if err != nil {
-			return err
-		}
-		tx := nft.NewTransaction()
-
-		// Ensure that our table and chains exist.
-		tx.Add(&knftables.Table{})
-
-		for _, chain := range chains {
-			tx.Add(&chain)
-			tx.Flush(&chain)
-		}
-
-		// Add rules for each table
-		for tableName, rules := range cfg.ruleBuilder.Rules {
-			if tableName == table {
-				for _, rule := range rules {
-					tx.Add(&rule)
-				}
-			}
-		}
-
-		// Apply changes in this transaction
-		if err := nft.Run(context.TODO(), tx); err != nil {
-			return err
-		}
+	// Add Istio sideCar mode tables, chains and rules
+	if err := cfg.addIstioNatTableRules(); err != nil {
+		return err
+	}
+	if err := cfg.addIstioMangleTableRules(); err != nil {
+		return err
+	}
+	if err := cfg.addIstioRawTableRules(); err != nil {
+		return err
 	}
 
 	return nil
