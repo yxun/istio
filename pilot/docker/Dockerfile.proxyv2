@@ -8,6 +8,11 @@ ARG ISTIO_BASE_REGISTRY=gcr.io/istio-release
 # The following section is used as base image if BASE_DISTRIBUTION=debug
 FROM ${ISTIO_BASE_REGISTRY}/base:${BASE_VERSION} AS debug
 
+# TODO: We may have to move this to the gcr.io/istio-release/base image.
+# Install nftables
+RUN apt-get update && apt-get install -y nftables \
+  && rm -rf /var/lib/apt/lists/*
+
 # The following section is used as base image if BASE_DISTRIBUTION=distroless
 FROM ${ISTIO_BASE_REGISTRY}/iptables:${BASE_VERSION} AS distroless
 
