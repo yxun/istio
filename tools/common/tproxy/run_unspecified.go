@@ -19,7 +19,7 @@ package capture
 import (
 	"errors"
 
-	"istio.io/istio/tools/istio-nftables/pkg/config"
+	"istio.io/istio/tools/common/config"
 )
 
 // ErrNotImplemented is returned when a requested feature is not implemented.

@@ -22,13 +22,13 @@ import (
 	"github.com/containernetworking/plugins/pkg/ns"
 
 	"istio.io/istio/pkg/log"
-	"istio.io/istio/tools/istio-nftables/pkg/cmd"
-	"istio.io/istio/tools/istio-nftables/pkg/config"
+	"istio.io/istio/tools/common/config"
+	"istio.io/istio/tools/istio-nftables/pkg/nft"
 )
 
 // Program defines a method which programs nftables based on the parameters
 // provided in Redirect.
-func (nft *nftables) Program(podName, netns string, rdrct *Redirect) error {
+func (n *nftables) Program(podName, netns string, rdrct *Redirect) error {
 	cfg := config.DefaultConfig()
 	cfg.HostFilesystemPodNetwork = true
 	cfg.NetworkNamespace = netns
@@ -63,6 +63,6 @@ func (nft *nftables) Program(podName, netns string, rdrct *Redirect) error {
 		}
 		log.Infof("============= Start nftables configuration for %v =============", podName)
 		defer log.Infof("============= End nftables configuration for %v =============", podName)
-		return cmd.ProgramNftables(cfg)
+		return nft.ProgramNftables(cfg)
 	})
 }

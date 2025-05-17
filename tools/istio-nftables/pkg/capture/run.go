@@ -23,8 +23,8 @@ import (
 	"sigs.k8s.io/knftables"
 
 	"istio.io/istio/pkg/log"
+	"istio.io/istio/tools/common/config"
 	"istio.io/istio/tools/istio-nftables/pkg/builder"
-	"istio.io/istio/tools/istio-nftables/pkg/config"
 	"istio.io/istio/tools/istio-nftables/pkg/constants"
 )
 
@@ -121,18 +121,24 @@ func (cfg *NftablesConfigurator) handleInboundPortsInclude() {
 			// port.
 			// In the IstioInboundChain chain, 'counter RETURN' bypasses Envoy and
 			// 'jump IstioTproxyChain' redirects to Envoy.
-			cfg.ruleBuilder.AppendVersionedRule(cfg.cfg.HostIPv4LoopbackCidr, "::1/128",
-				constants.IstioTproxyChain, constants.IstioProxyMangleTable,
+			cfg.ruleBuilder.AppendRule(constants.IstioTproxyChain, constants.IstioProxyMangleTable,
 				"meta l4proto tcp",
-				"ip daddr", "!=", constants.IPVersionSpecific,
+				"ip daddr", "!=", cfg.cfg.HostIPv4LoopbackCidr,
 				"tproxy to", ":"+cfg.cfg.InboundCapturePort,
 				"meta mark set", cfg.cfg.InboundTProxyMark+"/0xffffffff",
 				"accept")
+			cfg.ruleBuilder.AppendV6RuleIfSupported(constants.IstioTproxyChain, constants.IstioProxyMangleTable,
+				"meta l4proto tcp",
+				"ip6 daddr", "!=", "::1/128",
+				"tproxy to", ":"+cfg.cfg.InboundCapturePort,
+				"meta mark set", cfg.cfg.InboundTProxyMark+"/0xffffffff",
+				"accept")
+
 			table = constants.IstioProxyMangleTable
 		} else {
 			table = constants.IstioProxyNatTable
 		}
-		cfg.ruleBuilder.AppendRule("PREROUTING", table,
+		cfg.ruleBuilder.AppendRule(constants.PreroutingChain, table,
 			"meta l4proto tcp",
 			"jump", constants.IstioInboundChain)
 
@@ -142,8 +148,7 @@ func (cfg *NftablesConfigurator) handleInboundPortsInclude() {
 				for _, port := range split(cfg.cfg.InboundPortsExclude) {
 					cfg.ruleBuilder.AppendRule(constants.IstioInboundChain, table,
 						"meta l4proto tcp",
-						"tcp dport", port,
-						"RETURN")
+						"tcp dport", port, "return")
 				}
 			}
 			// Redirect remaining inbound traffic to Envoy.
@@ -178,7 +183,7 @@ func (cfg *NftablesConfigurator) handleInboundPortsInclude() {
 				} else {
 					cfg.ruleBuilder.AppendRule(
 						constants.IstioInboundChain, constants.IstioProxyNatTable,
-						"meta l4proto tcp", "tco dport", port, "jump", constants.IstioInRedirectChain)
+						"meta l4proto tcp", "tcp dport", port, "jump", constants.IstioInRedirectChain)
 				}
 			}
 		}
@@ -193,16 +198,17 @@ func (cfg *NftablesConfigurator) handleOutboundIncludeRules(
 	// Apply outbound IP inclusions.
 	if rangeInclude.IsWildcard {
 		// Wildcard specified. Redirect all remaining outbound traffic to Envoy.
+		// TODO (sgaddam): This is getting called twice for v4/v6. Move this to the calling context appropriately.
 		appendRule(constants.IstioOutputChain, constants.IstioProxyNatTable, "jump", constants.IstioRedirectChain)
 		for _, internalInterface := range split(cfg.cfg.RerouteVirtualInterfaces) {
 			insert(
-				"PREROUTING", constants.IstioProxyNatTable, 1, "iifname", internalInterface, "jump", constants.IstioRedirectChain)
+				constants.PreroutingChain, constants.IstioProxyNatTable, 1, "iifname", internalInterface, "jump", constants.IstioRedirectChain)
 		}
 	} else if len(rangeInclude.CIDRs) > 0 {
 		// User has specified a non-empty list of cidrs to be redirected to Envoy.
 		for _, cidr := range rangeInclude.CIDRs {
 			for _, internalInterface := range split(cfg.cfg.RerouteVirtualInterfaces) {
-				insert("PREROUTING", constants.IstioProxyNatTable, 1, "iifname", internalInterface,
+				insert(constants.PreroutingChain, constants.IstioProxyNatTable, 1, "iifname", internalInterface,
 					"ip daddr", cidr.String(), "jump", constants.IstioRedirectChain)
 			}
 			appendRule(
@@ -213,34 +219,24 @@ func (cfg *NftablesConfigurator) handleOutboundIncludeRules(
 
 func (cfg *NftablesConfigurator) shortCircuitKubeInternalInterface() {
 	for _, internalInterface := range split(cfg.cfg.RerouteVirtualInterfaces) {
-		cfg.ruleBuilder.InsertRule("PREROUTING", constants.IstioProxyNatTable, 1, "iifname", internalInterface, "RETURN")
+		cfg.ruleBuilder.InsertRule(constants.PreroutingChain, constants.IstioProxyNatTable, 1, "iifname", internalInterface, "return")
 	}
 }
 
 func (cfg *NftablesConfigurator) shortCircuitExcludeInterfaces() {
 	for _, excludeInterface := range split(cfg.cfg.ExcludeInterfaces) {
 		cfg.ruleBuilder.AppendRule(
-			constants.PreroutingChain, constants.IstioProxyNatTable, "iifname", excludeInterface, "RETURN")
-		cfg.ruleBuilder.AppendRule(constants.OutputChain, constants.IstioProxyNatTable, "oifname", excludeInterface, "RETURN")
+			constants.PreroutingChain, constants.IstioProxyNatTable, "iifname", excludeInterface, "return")
+		cfg.ruleBuilder.AppendRule(constants.OutputChain, constants.IstioProxyNatTable, "oifname", excludeInterface, "return")
 	}
 	if cfg.cfg.InboundInterceptionMode == "TPROXY" {
 		for _, excludeInterface := range split(cfg.cfg.ExcludeInterfaces) {
 
 			cfg.ruleBuilder.AppendRule(
-				constants.PreroutingChain, constants.IstioProxyMangleTable, "iifname", excludeInterface, "RETURN")
-			cfg.ruleBuilder.AppendRule(constants.OutputChain, constants.IstioProxyMangleTable, "oifname", excludeInterface, "RETURN")
+				constants.PreroutingChain, constants.IstioProxyMangleTable, "iifname", excludeInterface, "return")
+			cfg.ruleBuilder.AppendRule(constants.OutputChain, constants.IstioProxyMangleTable, "oifname", excludeInterface, "return")
 		}
 	}
-}
-
-func ignoreExists(err error) error {
-	if err == nil {
-		return nil
-	}
-	if strings.Contains(strings.ToLower(err.Error()), "file exists") {
-		return nil
-	}
-	return err
 }
 
 func (cfg *NftablesConfigurator) Run() error {
@@ -282,14 +278,14 @@ func (cfg *NftablesConfigurator) Run() error {
 			"meta l4proto tcp",
 			"ct state", "INVALID",
 			"jump", constants.IstioDropChain)
-		cfg.ruleBuilder.AppendRule(constants.IstioDropChain, constants.IstioProxyMangleTable, "DROP")
+		cfg.ruleBuilder.AppendRule(constants.IstioDropChain, constants.IstioProxyMangleTable, "drop")
 	}
 
 	// Create a new chain for to hit tunnel port directly. Envoy will be listening on port acting as VPN tunnel.
 	cfg.ruleBuilder.AppendRule(constants.IstioInboundChain, constants.IstioProxyNatTable,
 		"meta l4proto tcp",
 		"tcp dport", cfg.cfg.InboundTunnelPort,
-		"RETURN")
+		"return")
 
 	// Create a new chain for redirecting outbound traffic to the common Envoy port.
 	// In both chains, 'counter RETURN' bypasses Envoy and 'counter jump IstioRedirectChain'
@@ -312,19 +308,19 @@ func (cfg *NftablesConfigurator) Run() error {
 	// nftablesOrFail wrapper (like ufw). Current default is similar with 0.1
 	// Jump to the IstioOutputChain chain from OUTPUT chain for all traffic
 	// NOTE: udp traffic will be optionally shunted (or no-op'd) within the IstioOutputChain chain, we don't need a conditional jump here.
-	cfg.ruleBuilder.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable, "jump", constants.IstioOutputChain)
+	cfg.ruleBuilder.AppendRule(constants.OutputChain, constants.IstioProxyNatTable, "jump", constants.IstioOutputChain)
 
 	// Apply port based exclusions. Must be applied before connections back to self are redirected.
 	if cfg.cfg.OutboundPortsExclude != "" {
 		for _, port := range split(cfg.cfg.OutboundPortsExclude) {
-			cfg.ruleBuilder.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable, "tcp dport", port, "RETURN")
-			cfg.ruleBuilder.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable, "udp dport", port, "RETURN")
+			cfg.ruleBuilder.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable, "tcp dport", port, "return")
+			cfg.ruleBuilder.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable, "udp dport", port, "return")
 		}
 	}
 
 	// 127.0.0.6/::6 is bind connect from inbound passthrough cluster
-	cfg.ruleBuilder.AppendVersionedRule("127.0.0.6/32", "::6/128", constants.IstioOutputChain, constants.IstioProxyNatTable,
-		"oifname", "lo", "ip saddr", constants.IPVersionSpecific, "RETURN")
+	cfg.ruleBuilder.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable, "oifname", "lo", "ip saddr", "127.0.0.6/32", "return")
+	cfg.ruleBuilder.AppendV6RuleIfSupported(constants.IstioOutputChain, constants.IstioProxyNatTable, "oifname", "lo", "ip6 saddr", "::6/128", "return")
 
 	for _, uid := range split(cfg.cfg.ProxyUID) {
 		// Redirect app calls back to itself via Envoy when using the service VIP
@@ -335,18 +331,36 @@ func (cfg *NftablesConfigurator) Run() error {
 			// app => istio-agent => Envoy inbound => dns server
 			// Instead, we just have:
 			// app => istio-agent => dns server
-			cfg.ruleBuilder.AppendVersionedRule(cfg.cfg.HostIPv4LoopbackCidr, "::1/128", constants.IstioOutputChain, constants.IstioProxyNatTable,
+
+			cfg.ruleBuilder.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable,
 				"oifname", "lo",
 				"meta l4proto tcp",
-				"ip daddr", "!=", constants.IPVersionSpecific,
+				"ip daddr", "!=", cfg.cfg.HostIPv4LoopbackCidr,
 				"tcp dport", "!=", "{ "+"53, "+cfg.cfg.InboundTunnelPort+" }",
 				"skuid", uid,
 				"jump", constants.IstioInRedirectChain)
-		} else {
-			cfg.ruleBuilder.AppendVersionedRule(cfg.cfg.HostIPv4LoopbackCidr, "::1/128", constants.IstioOutputChain, constants.IstioProxyNatTable,
+
+			cfg.ruleBuilder.AppendV6RuleIfSupported(constants.IstioOutputChain, constants.IstioProxyNatTable,
 				"oifname", "lo",
 				"meta l4proto tcp",
-				"ip daddr", "!=", constants.IPVersionSpecific,
+				"ip6 daddr", "!=", "::1/128",
+				"tcp dport", "!=", "{ "+"53, "+cfg.cfg.InboundTunnelPort+" }",
+				"skuid", uid,
+				"jump", constants.IstioInRedirectChain)
+
+		} else {
+			cfg.ruleBuilder.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable,
+				"oifname", "lo",
+				"meta l4proto tcp",
+				"ip daddr", "!=", cfg.cfg.HostIPv4LoopbackCidr,
+				"tcp dport", "!=", cfg.cfg.InboundTunnelPort,
+				"skuid", uid,
+				"jump", constants.IstioInRedirectChain)
+
+			cfg.ruleBuilder.AppendV6RuleIfSupported(constants.IstioOutputChain, constants.IstioProxyNatTable,
+				"oifname", "lo",
+				"meta l4proto tcp",
+				"ip6 daddr", "!=", "::1/128",
 				"tcp dport", "!=", cfg.cfg.InboundTunnelPort,
 				"skuid", uid,
 				"jump", constants.IstioInRedirectChain)
@@ -366,12 +380,12 @@ func (cfg *NftablesConfigurator) Run() error {
 					"meta l4proto tcp",
 					"tcp dport", "!=", "53",
 					"skuid", uid,
-					"RETURN")
+					"return")
 			} else {
 				cfg.ruleBuilder.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable,
 					"oifname", "lo",
 					"skuid", "!=", uid,
-					"RETURN")
+					"return")
 			}
 		}
 
@@ -381,16 +395,24 @@ func (cfg *NftablesConfigurator) Run() error {
 		// all UDP/TCP packets from Envoy, regardless of dest.
 		cfg.ruleBuilder.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable,
 			"skuid", uid,
-			"RETURN")
+			"return")
 	}
 
 	for _, gid := range split(cfg.cfg.ProxyGID) {
 		// Redirect app calls back to itself via Envoy when using the service VIP
 		// e.g. appN => Envoy (client) => Envoy (server) => appN.
-		cfg.ruleBuilder.AppendVersionedRule(cfg.cfg.HostIPv4LoopbackCidr, "::1/128", constants.IstioOutputChain, constants.IstioProxyNatTable,
+		cfg.ruleBuilder.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable,
 			"oifname", "lo",
 			"meta l4proto tcp",
-			"ip daddr", "!=", constants.IPVersionSpecific,
+			"ip daddr", "!=", cfg.cfg.HostIPv4LoopbackCidr,
+			"tcp dport", "!=", cfg.cfg.InboundTunnelPort,
+			"skgid", gid,
+			"jump", constants.IstioInRedirectChain)
+
+		cfg.ruleBuilder.AppendV6RuleIfSupported(constants.IstioOutputChain, constants.IstioProxyNatTable,
+			"oifname", "lo",
+			"meta l4proto tcp",
+			"ip6 daddr", "!=", "::1/128",
 			"tcp dport", "!=", cfg.cfg.InboundTunnelPort,
 			"skgid", gid,
 			"jump", constants.IstioInRedirectChain)
@@ -410,12 +432,12 @@ func (cfg *NftablesConfigurator) Run() error {
 					"meta l4proto tcp",
 					"tcp dport", "!=", "53",
 					"skgid", "!=", gid,
-					"RETURN")
+					"return")
 			} else {
 				cfg.ruleBuilder.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable,
 					"oifname", "lo",
 					"skgid", "!=", gid,
-					"RETURN")
+					"return")
 			}
 		}
 
@@ -425,7 +447,7 @@ func (cfg *NftablesConfigurator) Run() error {
 		// all UDP/TCP packets from Envoy, regardless of dest.
 		cfg.ruleBuilder.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable,
 			"skgid", gid,
-			"RETURN")
+			"return")
 	}
 
 	ownerGroupsFilter := config.ParseInterceptFilter(cfg.cfg.OwnerGroupsInclude, cfg.cfg.OwnerGroupsExclude)
@@ -442,19 +464,22 @@ func (cfg *NftablesConfigurator) Run() error {
 	// Skip redirection for Envoy-aware applications and
 	// container-to-container traffic both of which explicitly use
 	// localhost.
-	cfg.ruleBuilder.AppendVersionedRule(cfg.cfg.HostIPv4LoopbackCidr, "::1/128", constants.IstioOutputChain, constants.IstioProxyNatTable,
-		"ip daddr", constants.IPVersionSpecific,
-		"RETURN")
+	cfg.ruleBuilder.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable,
+		"ip daddr", cfg.cfg.HostIPv4LoopbackCidr, "return")
+
+	cfg.ruleBuilder.AppendV6RuleIfSupported(constants.IstioOutputChain, constants.IstioProxyNatTable,
+		"ip6 daddr", "::1/128", "return")
+
 	// Apply outbound IPv4 exclusions. Must be applied before inclusions.
 	for _, cidr := range ipv4RangesExclude.CIDRs {
 		cfg.ruleBuilder.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable,
 			"ip daddr", cidr.String(),
-			"RETURN")
+			"return")
 	}
 	for _, cidr := range ipv6RangesExclude.CIDRs {
 		cfg.ruleBuilder.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable,
 			"ip daddr", cidr.String(),
-			"RETURN")
+			"return")
 	}
 
 	cfg.handleOutboundPortsInclude()
@@ -473,24 +498,36 @@ func (cfg *NftablesConfigurator) Run() error {
 			"oifname", "lo",
 			"meta l4proto tcp",
 			"mark", cfg.cfg.InboundTProxyMark,
-			"RETURN")
+			"return")
 		for _, uid := range split(cfg.cfg.ProxyUID) {
 			// mark outgoing packets from envoy to workload by pod ip
 			// app call VIP --> envoy outbound -(mark 1338)-> envoy inbound --> app
-			cfg.ruleBuilder.AppendVersionedRule(cfg.cfg.HostIPv4LoopbackCidr, "::1/128", constants.OutputChain, constants.IstioProxyMangleTable,
+			cfg.ruleBuilder.AppendRule(constants.OutputChain, constants.IstioProxyMangleTable,
 				"oifname", "lo",
 				"meta l4proto tcp",
-				"ip daddr", "!=", constants.IPVersionSpecific,
+				"ip daddr", "!=", cfg.cfg.HostIPv4LoopbackCidr,
+				"skuid", uid,
+				"meta mark set", constants.OutboundMark)
+			cfg.ruleBuilder.AppendV6RuleIfSupported(constants.OutputChain, constants.IstioProxyMangleTable,
+				"oifname", "lo",
+				"meta l4proto tcp",
+				"ip6 daddr", "!=", "::1/128",
 				"skuid", uid,
 				"meta mark set", constants.OutboundMark)
 		}
 		for _, gid := range split(cfg.cfg.ProxyGID) {
 			// mark outgoing packets from envoy to workload by pod ip
 			// app call VIP --> envoy outbound -(mark 1338)-> envoy inbound --> app
-			cfg.ruleBuilder.AppendVersionedRule(cfg.cfg.HostIPv4LoopbackCidr, "::1/128", constants.OutputChain, constants.IstioProxyMangleTable,
+			cfg.ruleBuilder.AppendRule(constants.OutputChain, constants.IstioProxyMangleTable,
 				"oifname", "lo",
 				"meta l4proto tcp",
-				"ip daddr", "!=", constants.IPVersionSpecific,
+				"ip daddr", "!=", cfg.cfg.HostIPv4LoopbackCidr,
+				"skgid", gid,
+				"meta mark set", constants.OutboundMark)
+			cfg.ruleBuilder.AppendV6RuleIfSupported(constants.OutputChain, constants.IstioProxyMangleTable,
+				"oifname", "lo",
+				"meta l4proto tcp",
+				"ip6 daddr", "!=", "::1/128",
 				"skgid", gid,
 				"meta mark set", constants.OutboundMark)
 		}
@@ -503,25 +540,26 @@ func (cfg *NftablesConfigurator) Run() error {
 		cfg.ruleBuilder.InsertRule(constants.IstioInboundChain, constants.IstioProxyMangleTable, 1,
 			"meta l4proto tcp",
 			"mark", cfg.cfg.InboundTProxyMark,
-			"RETURN")
+			"return")
 		// prevent intercept traffic from envoy/pilot-agent ==> app by 127.0.0.6 --> podip
 		cfg.ruleBuilder.InsertRule(constants.IstioInboundChain, constants.IstioProxyMangleTable, 2,
 			"iifname", "lo",
 			"meta l4proto tcp",
 			"ip daddr", "127.0.0.6/32",
-			"RETURN")
+			"return")
 		cfg.ruleBuilder.InsertRule(constants.IstioInboundChain, constants.IstioProxyMangleTable, 2,
 			"iifname", "lo",
 			"meta l4proto tcp",
 			"ip daddr", "::6/128",
-			"RETURN")
+			"return")
 		// prevent intercept traffic from app ==> app by pod ip
 		cfg.ruleBuilder.InsertRule(constants.IstioInboundChain, constants.IstioProxyMangleTable, 3,
 			"iifname", "lo",
 			"meta l4proto tcp",
 			"mark", "!=", constants.OutboundMark,
-			"RETURN")
+			"return")
 	}
+
 	return cfg.executeCommands()
 }
 
@@ -554,7 +592,7 @@ func (cfg *NftablesConfigurator) SetupDNSRedir(nft *builder.NftablesRuleBuilder,
 			constants.IstioOutputDNSChain, constants.IstioProxyNatTable,
 			"meta l4proto tcp",
 			"tcp dport", "53",
-			"REDIRECT",
+			"redirect",
 			"to", ":"+constants.IstioAgentDNSListenerPort)
 	} else {
 		for _, s := range dnsServersV4 {
@@ -569,7 +607,7 @@ func (cfg *NftablesConfigurator) SetupDNSRedir(nft *builder.NftablesRuleBuilder,
 				constants.IstioOutputDNSChain, constants.IstioProxyNatTable,
 				"ip daddr", s+"/32",
 				"tcp dport", "53",
-				"REDIRECT",
+				"redirect",
 				"to", ":"+constants.IstioAgentDNSListenerPort)
 		}
 		for _, s := range dnsServersV6 {
@@ -577,7 +615,7 @@ func (cfg *NftablesConfigurator) SetupDNSRedir(nft *builder.NftablesRuleBuilder,
 				constants.IstioOutputDNSChain, constants.IstioProxyNatTable,
 				"ip daddr", s+"/128",
 				"tcp dport", "53",
-				"REDIRECT",
+				"redirect",
 				"to", ":"+constants.IstioAgentDNSListenerPort)
 		}
 	}
@@ -587,7 +625,7 @@ func (cfg *NftablesConfigurator) SetupDNSRedir(nft *builder.NftablesRuleBuilder,
 		// This will be useful for the CNI case where pod DNS server address cannot be decided.
 		nft.AppendRule(constants.IstioOutputDNSChain, constants.IstioProxyNatTable,
 			"udp dport", "53",
-			"REDIRECT",
+			"redirect",
 			"to", ":"+constants.IstioAgentDNSListenerPort)
 	} else {
 		// redirect all UDP dns traffic on port 53 to the agent on port 15053 for all servers
@@ -601,14 +639,14 @@ func (cfg *NftablesConfigurator) SetupDNSRedir(nft *builder.NftablesRuleBuilder,
 			nft.AppendRule(constants.IstioOutputDNSChain, constants.IstioProxyNatTable,
 				"ip daddr", s+"/32",
 				"udp dport", "53",
-				"REDIRECT",
+				"redirect",
 				"to", ":"+constants.IstioAgentDNSListenerPort)
 		}
 		for _, s := range dnsServersV6 {
 			nft.AppendRule(constants.IstioOutputDNSChain, constants.IstioProxyNatTable,
 				"ip daddr", s+"/128",
 				"udp dport", "53",
-				"REDIRECT",
+				"redirect",
 				"to", ":"+constants.IstioAgentDNSListenerPort)
 		}
 	}
@@ -721,14 +759,14 @@ func (cfg *NftablesConfigurator) handleCaptureByOwnerGroup(filter config.Interce
 		for _, group := range filter.Values {
 			cfg.ruleBuilder.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable,
 				"skgid", group,
-				"RETURN")
+				"return")
 		}
 	} else {
 		groupIsNoneOf := CombineMatchers(filter.Values, func(group string) []string {
 			return []string{"skgid", "!=", group}
 		})
 		cfg.ruleBuilder.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable,
-			append(groupIsNoneOf, "RETURN")...)
+			append(groupIsNoneOf, "return")...)
 	}
 }
 
@@ -891,7 +929,6 @@ func (cfg *NftablesConfigurator) executeCommands() error {
 	// types in ways that triggered bugs in older versions of nft, causing them to
 	// crash.
 
-	// Add Istio sideCar mode tables, chains and rules
 	if err := cfg.addIstioNatTableRules(); err != nil {
 		return err
 	}
@@ -903,4 +940,20 @@ func (cfg *NftablesConfigurator) executeCommands() error {
 	}
 
 	return nil
+}
+
+func CombineMatchers(values []string, matcher func(value string) []string) []string {
+	matchers := make([][]string, 0, len(values))
+	for _, value := range values {
+		matchers = append(matchers, matcher(value))
+	}
+	return Flatten(matchers...)
+}
+
+func Flatten(lists ...[]string) []string {
+	var result []string
+	for _, list := range lists {
+		result = append(result, list...)
+	}
+	return result
 }

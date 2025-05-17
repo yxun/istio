@@ -15,12 +15,9 @@
 package builder
 
 import (
-	"strings"
-
 	"sigs.k8s.io/knftables"
 
-	"istio.io/istio/pkg/log"
-	"istio.io/istio/tools/istio-nftables/pkg/config"
+	"istio.io/istio/tools/common/config"
 	"istio.io/istio/tools/istio-nftables/pkg/constants"
 )
 
@@ -48,66 +45,25 @@ func NewNftablesRuleBuilder(cfg *config.Config) *NftablesRuleBuilder {
 }
 
 func (rb *NftablesRuleBuilder) InsertRule(chain string, table string, position int, params ...string) *NftablesRuleBuilder {
-	rules := rb.Rules[table]
-	return rb.insertInternal(&rules, chain, position, params...)
-}
-
-func (rb *NftablesRuleBuilder) insertInternal(ipt *[]knftables.Rule, chain string, position int, params ...string) *NftablesRuleBuilder {
-	*ipt = append(*ipt, knftables.Rule{
-		Chain:   chain,
-		Rule:    strings.Join(params, " "),
-		Index:   &position,
-		Comment: knftables.PtrTo(""),
-	})
-	idx := indexOf("jump", params)
-	if idx < 0 && !strings.HasPrefix(chain, "ISTIO_") {
-		log.Warnf("Inserting non-jump rule in non-Istio chain (rule: %s) \n", strings.Join(params, " "))
+	rule := knftables.Rule{
+		Chain: chain,
+		Rule:  knftables.Concat(params),
+		Index: &position,
 	}
+	rb.Rules[table] = append(rb.Rules[table], rule)
 	return rb
-}
-
-func indexOf(element string, data []string) int {
-	for k, v := range data {
-		if element == v {
-			return k
-		}
-	}
-	return -1 // not found.
 }
 
 func (rb *NftablesRuleBuilder) AppendRule(chain string, table string, params ...string) *NftablesRuleBuilder {
-	rules := rb.Rules[table]
-	return rb.appendInternal(&rules, chain, params...)
-}
-
-func (rb *NftablesRuleBuilder) appendInternal(ipt *[]knftables.Rule, chain string, params ...string) *NftablesRuleBuilder {
-	idx := indexOf("jump", params)
-	if idx < 0 && !strings.HasPrefix(chain, "ISTIO_") {
-		log.Warnf("Appending non-jump rule in non-Istio chain (rule: %s) \n", strings.Join(params, " "))
+	rule := knftables.Rule{
+		Chain: chain,
+		Rule:  knftables.Concat(params),
 	}
-	*ipt = append(*ipt, knftables.Rule{
-		Chain:   chain,
-		Rule:    strings.Join(params, " "),
-		Comment: knftables.PtrTo(""),
-	})
+	rb.Rules[table] = append(rb.Rules[table], rule)
 	return rb
 }
 
-// AppendVersionedRule is a wrapper around AppendRule that substitutes an ipv4/ipv6 specific value
-// in place in the params. This allows appending a dual-stack rule that has an IP value in it.
-func (rb *NftablesRuleBuilder) AppendVersionedRule(ipv4 string, ipv6 string, chain string, table string, params ...string) {
-	rb.AppendRule(chain, table, replaceVersionSpecific(ipv4, params...)...)
-	rb.AppendRule(chain, table, replaceVersionSpecific(ipv6, params...)...)
-}
-
-func replaceVersionSpecific(contents string, inputs ...string) []string {
-	res := make([]string, 0, len(inputs))
-	for _, i := range inputs {
-		if i == constants.IPVersionSpecific {
-			res = append(res, contents)
-		} else {
-			res = append(res, i)
-		}
-	}
-	return res
+func (rb *NftablesRuleBuilder) AppendV6RuleIfSupported(chain string, table string, params ...string) *NftablesRuleBuilder {
+	// TODO (sridhar): Check if the platform supports IPv6 and only program when it does.
+	return rb.AppendRule(chain, table, params...)
 }
