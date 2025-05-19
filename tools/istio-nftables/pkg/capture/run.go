@@ -190,29 +190,33 @@ func (cfg *NftablesConfigurator) handleInboundPortsInclude() {
 	}
 }
 
-func (cfg *NftablesConfigurator) handleOutboundIncludeRules(
-	rangeInclude NetworkRange,
-	appendRule func(chain string, table string, params ...string) *builder.NftablesRuleBuilder,
-	insert func(chain string, table string, position int, params ...string) *builder.NftablesRuleBuilder,
-) {
+func (cfg *NftablesConfigurator) handleOutboundIncludeRules(ipv4NwRange NetworkRange, ipv6NwRange NetworkRange) {
 	// Apply outbound IP inclusions.
-	if rangeInclude.IsWildcard {
+	cfg.ruleBuilder.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable, "jump", constants.IstioRedirectChain)
+
+	if ipv4NwRange.IsWildcard || ipv6NwRange.IsWildcard {
 		// Wildcard specified. Redirect all remaining outbound traffic to Envoy.
-		// TODO (sgaddam): This is getting called twice for v4/v6. Move this to the calling context appropriately.
-		appendRule(constants.IstioOutputChain, constants.IstioProxyNatTable, "jump", constants.IstioRedirectChain)
 		for _, internalInterface := range split(cfg.cfg.RerouteVirtualInterfaces) {
-			insert(
+			cfg.ruleBuilder.InsertRule(
 				constants.PreroutingChain, constants.IstioProxyNatTable, 1, "iifname", internalInterface, "jump", constants.IstioRedirectChain)
 		}
-	} else if len(rangeInclude.CIDRs) > 0 {
+	} else {
 		// User has specified a non-empty list of cidrs to be redirected to Envoy.
-		for _, cidr := range rangeInclude.CIDRs {
+		for _, cidr := range ipv4NwRange.CIDRs {
 			for _, internalInterface := range split(cfg.cfg.RerouteVirtualInterfaces) {
-				insert(constants.PreroutingChain, constants.IstioProxyNatTable, 1, "iifname", internalInterface,
+				cfg.ruleBuilder.InsertRule(constants.PreroutingChain, constants.IstioProxyNatTable, 1, "iifname", internalInterface,
 					"ip daddr", cidr.String(), "jump", constants.IstioRedirectChain)
 			}
-			appendRule(
-				constants.IstioOutputChain, constants.IstioProxyNatTable, "ip daddr", cidr.String(), "jump", constants.IstioRedirectChain)
+			cfg.ruleBuilder.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable, "ip daddr", cidr.String(), "jump", constants.IstioRedirectChain)
+		}
+
+		for _, cidr := range ipv6NwRange.CIDRs {
+			for _, internalInterface := range split(cfg.cfg.RerouteVirtualInterfaces) {
+				cfg.ruleBuilder.InsertV6RuleIfSupported(constants.PreroutingChain, constants.IstioProxyNatTable, 1, "iifname", internalInterface,
+					"ip6 daddr", cidr.String(), "jump", constants.IstioRedirectChain)
+			}
+			cfg.ruleBuilder.AppendV6RuleIfSupported(constants.IstioOutputChain, constants.IstioProxyNatTable, "ip6 daddr",
+				cidr.String(), "jump", constants.IstioRedirectChain)
 		}
 	}
 }
@@ -477,15 +481,16 @@ func (cfg *NftablesConfigurator) Run() error {
 			"return")
 	}
 	for _, cidr := range ipv6RangesExclude.CIDRs {
-		cfg.ruleBuilder.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable,
-			"ip daddr", cidr.String(),
+		cfg.ruleBuilder.AppendV6RuleIfSupported(constants.IstioOutputChain, constants.IstioProxyNatTable,
+			"ip6 daddr", cidr.String(),
 			"return")
 	}
 
 	cfg.handleOutboundPortsInclude()
 
-	cfg.handleOutboundIncludeRules(ipv4RangesInclude, cfg.ruleBuilder.AppendRule, cfg.ruleBuilder.InsertRule)
-	cfg.handleOutboundIncludeRules(ipv6RangesInclude, cfg.ruleBuilder.AppendRule, cfg.ruleBuilder.InsertRule)
+	cfg.handleOutboundIncludeRules(ipv4RangesInclude, ipv6RangesInclude)
+	// SGM: Commented out, as we are using inet table. So rules have to be programmed only once.
+	// cfg.handleOutboundIncludeRules(ipv6RangesInclude, cfg.ruleBuilder.AppendRule, cfg.ruleBuilder.InsertRule)
 
 	if cfg.cfg.InboundInterceptionMode == "TPROXY" {
 		// save packet mark set by envoy.filters.listener.original_src as connection mark
@@ -545,12 +550,12 @@ func (cfg *NftablesConfigurator) Run() error {
 		cfg.ruleBuilder.InsertRule(constants.IstioInboundChain, constants.IstioProxyMangleTable, 2,
 			"iifname", "lo",
 			"meta l4proto tcp",
-			"ip daddr", "127.0.0.6/32",
+			"ip saddr", "127.0.0.6/32",
 			"return")
-		cfg.ruleBuilder.InsertRule(constants.IstioInboundChain, constants.IstioProxyMangleTable, 2,
+		cfg.ruleBuilder.InsertV6RuleIfSupported(constants.IstioInboundChain, constants.IstioProxyMangleTable, 2,
 			"iifname", "lo",
 			"meta l4proto tcp",
-			"ip daddr", "::6/128",
+			"ip6 saddr", "::6/128",
 			"return")
 		// prevent intercept traffic from app ==> app by pod ip
 		cfg.ruleBuilder.InsertRule(constants.IstioInboundChain, constants.IstioProxyMangleTable, 3,
@@ -611,9 +616,9 @@ func (cfg *NftablesConfigurator) SetupDNSRedir(nft *builder.NftablesRuleBuilder,
 				"to", ":"+constants.IstioAgentDNSListenerPort)
 		}
 		for _, s := range dnsServersV6 {
-			nft.AppendRule(
+			nft.AppendV6RuleIfSupported(
 				constants.IstioOutputDNSChain, constants.IstioProxyNatTable,
-				"ip daddr", s+"/128",
+				"ip6 daddr", s+"/128",
 				"tcp dport", "53",
 				"redirect",
 				"to", ":"+constants.IstioAgentDNSListenerPort)
@@ -643,8 +648,8 @@ func (cfg *NftablesConfigurator) SetupDNSRedir(nft *builder.NftablesRuleBuilder,
 				"to", ":"+constants.IstioAgentDNSListenerPort)
 		}
 		for _, s := range dnsServersV6 {
-			nft.AppendRule(constants.IstioOutputDNSChain, constants.IstioProxyNatTable,
-				"ip daddr", s+"/128",
+			nft.AppendV6RuleIfSupported(constants.IstioOutputDNSChain, constants.IstioProxyNatTable,
+				"ip6 daddr", s+"/128",
 				"udp dport", "53",
 				"redirect",
 				"to", ":"+constants.IstioAgentDNSListenerPort)
@@ -710,7 +715,7 @@ func (cfg *NftablesConfigurator) addDNSConntrackZones(
 			"CT", "zone", "set", "1")
 	} else {
 
-		if len(dnsServersV4) != 0 {
+		if len(dnsServersV4) != 0 || len(dnsServersV6) != 0 {
 			nft.AppendRule(constants.PreroutingChain, constants.IstioProxyRawTable, "jump", constants.IstioInboundChain)
 		}
 		// Go through all DNS servers in etc/resolv.conf and mark the packets based on these destination addresses.
@@ -727,19 +732,16 @@ func (cfg *NftablesConfigurator) addDNSConntrackZones(
 				"CT", "zone", "set", "1")
 		}
 
-		if len(dnsServersV6) != 0 {
-			nft.AppendRule(constants.PreroutingChain, constants.IstioProxyRawTable, "jump", constants.IstioInboundChain)
-		}
 		for _, s := range dnsServersV6 {
 			// Mark all UDP dns traffic with dst port 53 as zone 2. These are application client packets towards DNS resolvers.
-			nft.AppendRule(constants.IstioOutputDNSChain, constants.IstioProxyRawTable,
+			nft.AppendV6RuleIfSupported(constants.IstioOutputDNSChain, constants.IstioProxyRawTable,
 				"udp dport", "53",
-				"ip daddr", s+"/128",
+				"ip6 daddr", s+"/128",
 				"CT", "zone", "set", "2")
 			// Mark all UDP dns traffic with src port 53 as zone 1. These are response packets from the DNS resolvers.
-			nft.AppendRule(constants.IstioInboundChain, constants.IstioProxyRawTable,
+			nft.AppendV6RuleIfSupported(constants.IstioInboundChain, constants.IstioProxyRawTable,
 				"udp sport", "53",
-				"ip daddr", s+"/128",
+				"ip6 daddr", s+"/128",
 				"CT", "zone", "set", "1")
 		}
 	}

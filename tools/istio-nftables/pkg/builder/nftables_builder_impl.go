@@ -54,6 +54,11 @@ func (rb *NftablesRuleBuilder) InsertRule(chain string, table string, position i
 	return rb
 }
 
+func (rb *NftablesRuleBuilder) InsertV6RuleIfSupported(chain string, table string, position int, params ...string) *NftablesRuleBuilder {
+	// TODO (sridhar): Check if the platform supports IPv6 and only program when it does.
+	return rb.InsertRule(chain, table, position, params...)
+}
+
 func (rb *NftablesRuleBuilder) AppendRule(chain string, table string, params ...string) *NftablesRuleBuilder {
 	rule := knftables.Rule{
 		Chain: chain,
