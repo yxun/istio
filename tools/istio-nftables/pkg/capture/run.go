@@ -489,8 +489,6 @@ func (cfg *NftablesConfigurator) Run() error {
 	cfg.handleOutboundPortsInclude()
 
 	cfg.handleOutboundIncludeRules(ipv4RangesInclude, ipv6RangesInclude)
-	// SGM: Commented out, as we are using inet table. So rules have to be programmed only once.
-	// cfg.handleOutboundIncludeRules(ipv6RangesInclude, cfg.ruleBuilder.AppendRule, cfg.ruleBuilder.InsertRule)
 
 	if cfg.cfg.InboundInterceptionMode == "TPROXY" {
 		// save packet mark set by envoy.filters.listener.original_src as connection mark

@@ -55,8 +55,11 @@ func (rb *NftablesRuleBuilder) InsertRule(chain string, table string, position i
 }
 
 func (rb *NftablesRuleBuilder) InsertV6RuleIfSupported(chain string, table string, position int, params ...string) *NftablesRuleBuilder {
-	// TODO (sridhar): Check if the platform supports IPv6 and only program when it does.
-	return rb.InsertRule(chain, table, position, params...)
+	if rb.cfg.EnableIPv6 {
+		return rb.InsertRule(chain, table, position, params...)
+	}
+
+	return nil
 }
 
 func (rb *NftablesRuleBuilder) AppendRule(chain string, table string, params ...string) *NftablesRuleBuilder {
@@ -69,6 +72,9 @@ func (rb *NftablesRuleBuilder) AppendRule(chain string, table string, params ...
 }
 
 func (rb *NftablesRuleBuilder) AppendV6RuleIfSupported(chain string, table string, params ...string) *NftablesRuleBuilder {
-	// TODO (sridhar): Check if the platform supports IPv6 and only program when it does.
-	return rb.AppendRule(chain, table, params...)
+	if rb.cfg.EnableIPv6 {
+		return rb.AppendRule(chain, table, params...)
+	}
+
+	return nil
 }
