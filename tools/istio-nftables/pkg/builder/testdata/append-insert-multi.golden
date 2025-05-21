@@ -1,4 +1,5 @@
--t table -N chain
--t table -A chain -f foo -b bar
--t table -I chain 2 -f foo -b bar
--t table -A chain -f foo -b baz
+add table inet inet-table
+add chain inet inet-table test-chain
+add rule inet inet-table test-chain meta l4proto tcp jump test-chain
+add rule inet inet-table test-chain tcp dport 15008 return
+add rule inet inet-table test-chain meta l4proto tcp redirect to :15001

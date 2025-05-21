@@ -1,4 +1,0 @@
-add chain ip6 filter output
-add rule ip6 filter output ip daddr 127.0.0.8 drop
-insert rule ip6 filter output position 2 ip daddr 127.0.0.9 drop
-add rule ip6 filter output ip daddr 127.0.0.10 drop
