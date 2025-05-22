@@ -45,12 +45,23 @@ func buildRules(t *testing.T, builder *NftablesRuleBuilder) string {
 	tx.Add(&knftables.Chain{
 		Name: testChain,
 	})
+
+	// we use chainRuleCount to keep track of how many rules have been added to each chain.
+	chainRuleCount := make(map[string]int)
 	for _, rule := range builder.Rules[testTable] {
-		if rule.Index == nil {
-			tx.Add(&rule)
-		} else {
-			tx.Insert(&rule)
+		// In IPtables, inserting a rule at position 1 means it gets placed at the head of the chain. In contrast,
+		// nftables starts rule indexing at 0. However, nftables doesn't allow inserting a rule at index 0 if the
+		// chain is empty. So to handle this case, we check if the chain is empty, and if it is, we use appendRule instead.
+		if rule.Index != nil && chainRuleCount[rule.Chain] == 0 {
+			rule.Index = nil
 		}
+		// When a rule includes the Index, its considered as an Insert request.
+		if rule.Index != nil {
+			tx.Insert(&rule)
+		} else {
+			tx.Add(&rule)
+		}
+		chainRuleCount[rule.Chain]++
 	}
 	if err := nft.Run(context.TODO(), tx); err != nil {
 		t.Fatalf("error from TestBuilder buildRules: %v", err)
