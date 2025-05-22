@@ -48,7 +48,7 @@ func (rb *NftablesRuleBuilder) InsertRule(chain string, table string, position i
 	rule := knftables.Rule{
 		Chain: chain,
 		Rule:  knftables.Concat(params),
-		Index: &position,
+		Index: knftables.PtrTo(position),
 	}
 	rb.Rules[table] = append(rb.Rules[table], rule)
 	return rb

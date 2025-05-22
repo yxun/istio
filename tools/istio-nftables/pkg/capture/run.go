@@ -198,13 +198,13 @@ func (cfg *NftablesConfigurator) handleOutboundIncludeRules(ipv4NwRange NetworkR
 		// Wildcard specified. Redirect all remaining outbound traffic to Envoy.
 		for _, internalInterface := range split(cfg.cfg.RerouteVirtualInterfaces) {
 			cfg.ruleBuilder.InsertRule(
-				constants.PreroutingChain, constants.IstioProxyNatTable, 1, "iifname", internalInterface, "jump", constants.IstioRedirectChain)
+				constants.PreroutingChain, constants.IstioProxyNatTable, 0, "iifname", internalInterface, "jump", constants.IstioRedirectChain)
 		}
 	} else {
 		// User has specified a non-empty list of cidrs to be redirected to Envoy.
 		for _, cidr := range ipv4NwRange.CIDRs {
 			for _, internalInterface := range split(cfg.cfg.RerouteVirtualInterfaces) {
-				cfg.ruleBuilder.InsertRule(constants.PreroutingChain, constants.IstioProxyNatTable, 1, "iifname", internalInterface,
+				cfg.ruleBuilder.InsertRule(constants.PreroutingChain, constants.IstioProxyNatTable, 0, "iifname", internalInterface,
 					"ip daddr", cidr.String(), "jump", constants.IstioRedirectChain)
 			}
 			cfg.ruleBuilder.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable, "ip daddr", cidr.String(), "jump", constants.IstioRedirectChain)
@@ -212,7 +212,7 @@ func (cfg *NftablesConfigurator) handleOutboundIncludeRules(ipv4NwRange NetworkR
 
 		for _, cidr := range ipv6NwRange.CIDRs {
 			for _, internalInterface := range split(cfg.cfg.RerouteVirtualInterfaces) {
-				cfg.ruleBuilder.InsertV6RuleIfSupported(constants.PreroutingChain, constants.IstioProxyNatTable, 1, "iifname", internalInterface,
+				cfg.ruleBuilder.InsertV6RuleIfSupported(constants.PreroutingChain, constants.IstioProxyNatTable, 0, "iifname", internalInterface,
 					"ip6 daddr", cidr.String(), "jump", constants.IstioRedirectChain)
 			}
 			cfg.ruleBuilder.AppendV6RuleIfSupported(constants.IstioOutputChain, constants.IstioProxyNatTable, "ip6 daddr",
@@ -223,7 +223,7 @@ func (cfg *NftablesConfigurator) handleOutboundIncludeRules(ipv4NwRange NetworkR
 
 func (cfg *NftablesConfigurator) shortCircuitKubeInternalInterface() {
 	for _, internalInterface := range split(cfg.cfg.RerouteVirtualInterfaces) {
-		cfg.ruleBuilder.InsertRule(constants.PreroutingChain, constants.IstioProxyNatTable, 1, "iifname", internalInterface, "return")
+		cfg.ruleBuilder.InsertRule(constants.PreroutingChain, constants.IstioProxyNatTable, 0, "iifname", internalInterface, "return")
 	}
 }
 
@@ -540,23 +540,23 @@ func (cfg *NftablesConfigurator) Run() error {
 			"CT", "mark", cfg.cfg.InboundTProxyMark,
 			"meta mark set", "CT", "mark")
 		// prevent infinite redirect
-		cfg.ruleBuilder.InsertRule(constants.IstioInboundChain, constants.IstioProxyMangleTable, 1,
+		cfg.ruleBuilder.InsertRule(constants.IstioInboundChain, constants.IstioProxyMangleTable, 0,
 			"meta l4proto tcp",
 			"mark", cfg.cfg.InboundTProxyMark,
 			"return")
 		// prevent intercept traffic from envoy/pilot-agent ==> app by 127.0.0.6 --> podip
-		cfg.ruleBuilder.InsertRule(constants.IstioInboundChain, constants.IstioProxyMangleTable, 2,
+		cfg.ruleBuilder.InsertRule(constants.IstioInboundChain, constants.IstioProxyMangleTable, 1,
 			"iifname", "lo",
 			"meta l4proto tcp",
 			"ip saddr", "127.0.0.6/32",
 			"return")
-		cfg.ruleBuilder.InsertV6RuleIfSupported(constants.IstioInboundChain, constants.IstioProxyMangleTable, 2,
+		cfg.ruleBuilder.InsertV6RuleIfSupported(constants.IstioInboundChain, constants.IstioProxyMangleTable, 1,
 			"iifname", "lo",
 			"meta l4proto tcp",
 			"ip6 saddr", "::6/128",
 			"return")
 		// prevent intercept traffic from app ==> app by pod ip
-		cfg.ruleBuilder.InsertRule(constants.IstioInboundChain, constants.IstioProxyMangleTable, 3,
+		cfg.ruleBuilder.InsertRule(constants.IstioInboundChain, constants.IstioProxyMangleTable, 2,
 			"iifname", "lo",
 			"meta l4proto tcp",
 			"mark", "!=", constants.OutboundMark,
@@ -818,9 +818,26 @@ func (cfg *NftablesConfigurator) addIstioNatTableRules() error {
 		Comment: knftables.PtrTo(""),
 	})
 
-	// Add NAT table rules
+	// we use chainRuleCount to keep track of how many rules have been added to each chain.
+	chainRuleCount := make(map[string]int)
+
 	for _, rule := range cfg.ruleBuilder.Rules[constants.IstioProxyNatTable] {
-		tx.Add(&rule)
+		chain := rule.Chain
+
+		// In IPtables, inserting a rule at position 1 means it gets placed at the head of the chain. In contrast,
+		// nftables starts rule indexing at 0. However, nftables doesn't allow inserting a rule at index 0 if the
+		// chain is empty. So to handle this case, we check if the chain is empty, and if it is, we use appendRule instead.
+		if rule.Index != nil && chainRuleCount[chain] == 0 {
+			rule.Index = nil
+		}
+
+		// When a rule includes the Index, its considered as an Insert request.
+		if rule.Index != nil {
+			tx.Insert(&rule)
+		} else {
+			tx.Add(&rule)
+		}
+		chainRuleCount[chain]++
 	}
 
 	// Apply changes in this transaction
@@ -828,6 +845,11 @@ func (cfg *NftablesConfigurator) addIstioNatTableRules() error {
 }
 
 func (cfg *NftablesConfigurator) addIstioMangleTableRules() error {
+	// If there are no rules to be added to the IstioProxyMangleTable, skip creating the associated tables and chains.
+	if len(cfg.ruleBuilder.Rules[constants.IstioProxyMangleTable]) == 0 {
+		return nil
+	}
+
 	// Get knftables interface
 	nft, err := knftables.New(knftables.InetFamily, constants.IstioProxyMangleTable)
 	if err != nil {
@@ -877,6 +899,11 @@ func (cfg *NftablesConfigurator) addIstioMangleTableRules() error {
 }
 
 func (cfg *NftablesConfigurator) addIstioRawTableRules() error {
+	// If there are no rules to be added to the IstioProxyRawTable, skip creating the associated tables and chains.
+	if len(cfg.ruleBuilder.Rules[constants.IstioProxyRawTable]) == 0 {
+		return nil
+	}
+
 	// Get knftables interface
 	nft, err := knftables.New(knftables.InetFamily, constants.IstioProxyRawTable)
 	if err != nil {
