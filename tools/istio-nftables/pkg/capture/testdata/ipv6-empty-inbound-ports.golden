@@ -1,0 +1,25 @@
+# Table: istio-proxy-nat
+# Chain: istio-in-redirect
+meta l4proto tcp redirect to :15006
+# Chain: istio-inbound
+meta l4proto tcp tcp dport 15008 return
+# Chain: istio-output
+oifname lo ip saddr 127.0.0.6/32 return
+oifname lo ip6 saddr ::6/128 return
+oifname lo meta l4proto tcp ip daddr != 127.0.0.1/32 tcp dport != 15008 skuid 1337 jump istio-in-redirect
+oifname lo meta l4proto tcp ip6 daddr != ::1/128 tcp dport != 15008 skuid 1337 jump istio-in-redirect
+oifname lo skuid != 1337 return
+skuid 1337 return
+oifname lo meta l4proto tcp ip daddr != 127.0.0.1/32 tcp dport != 15008 skgid 1337 jump istio-in-redirect
+oifname lo meta l4proto tcp ip6 daddr != ::1/128 tcp dport != 15008 skgid 1337 jump istio-in-redirect
+oifname lo skgid != 1337 return
+skgid 1337 return
+ip daddr 127.0.0.1/32 return
+ip6 daddr ::1/128 return
+jump istio-redirect
+# Chain: istio-output-dns
+# Chain: istio-redirect
+meta l4proto tcp redirect to :15001
+# Chain: output
+jump istio-output
+# Chain: prerouting

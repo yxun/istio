@@ -38,6 +38,7 @@ func compareToGolden(t *testing.T, name string, actual string) {
 	testutil.CompareContent(t, gotBytes, goldenFile)
 }
 
+// buildRules creats a knftables.Fake interface for testing. It does not apply rules to the target system.
 func buildRules(t *testing.T, builder *NftablesRuleBuilder) string {
 	nft := knftables.NewFake(knftables.InetFamily, testTable)
 	tx := nft.NewTransaction()

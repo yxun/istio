@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
+	"sort"
 	"strings"
 
 	"sigs.k8s.io/knftables"
@@ -32,6 +33,8 @@ type NftablesConfigurator struct {
 	cfg              *config.Config
 	NetworkNamespace string
 	ruleBuilder      *builder.NftablesRuleBuilder
+	testRun          bool
+	testResults      []string
 }
 
 type NetworkRange struct {
@@ -49,6 +52,8 @@ func NewNftablesConfigurator(cfg *config.Config) (*NftablesConfigurator, error) 
 		cfg:              cfg,
 		NetworkNamespace: cfg.NetworkNamespace,
 		ruleBuilder:      builder.NewNftablesRuleBuilder(cfg),
+		testRun:          false,
+		testResults:      []string{},
 	}, nil
 }
 
@@ -770,12 +775,7 @@ func (cfg *NftablesConfigurator) handleCaptureByOwnerGroup(filter config.Interce
 	}
 }
 
-func (cfg *NftablesConfigurator) addIstioNatTableRules() error {
-	// Get knftables interface
-	nft, err := knftables.New(knftables.InetFamily, constants.IstioProxyNatTable)
-	if err != nil {
-		return err
-	}
+func (cfg *NftablesConfigurator) addIstioNatTableRules(nft knftables.Interface) error {
 	tx := nft.NewTransaction()
 	// Ensure that our table exists.
 	tx.Add(&knftables.Table{
@@ -844,17 +844,12 @@ func (cfg *NftablesConfigurator) addIstioNatTableRules() error {
 	return nft.Run(context.TODO(), tx)
 }
 
-func (cfg *NftablesConfigurator) addIstioMangleTableRules() error {
+func (cfg *NftablesConfigurator) addIstioMangleTableRules(nft knftables.Interface) error {
 	// If there are no rules to be added to the IstioProxyMangleTable, skip creating the associated tables and chains.
 	if len(cfg.ruleBuilder.Rules[constants.IstioProxyMangleTable]) == 0 {
 		return nil
 	}
 
-	// Get knftables interface
-	nft, err := knftables.New(knftables.InetFamily, constants.IstioProxyMangleTable)
-	if err != nil {
-		return err
-	}
 	tx := nft.NewTransaction()
 	// Ensure that our table exists.
 	tx.Add(&knftables.Table{
@@ -898,17 +893,12 @@ func (cfg *NftablesConfigurator) addIstioMangleTableRules() error {
 	return nft.Run(context.TODO(), tx)
 }
 
-func (cfg *NftablesConfigurator) addIstioRawTableRules() error {
+func (cfg *NftablesConfigurator) addIstioRawTableRules(nft knftables.Interface) error {
 	// If there are no rules to be added to the IstioProxyRawTable, skip creating the associated tables and chains.
 	if len(cfg.ruleBuilder.Rules[constants.IstioProxyRawTable]) == 0 {
 		return nil
 	}
 
-	// Get knftables interface
-	nft, err := knftables.New(knftables.InetFamily, constants.IstioProxyRawTable)
-	if err != nil {
-		return err
-	}
 	tx := nft.NewTransaction()
 	// Ensure that our table exists.
 	tx.Add(&knftables.Table{
@@ -948,24 +938,80 @@ func (cfg *NftablesConfigurator) addIstioRawTableRules() error {
 	return nft.Run(context.TODO(), tx)
 }
 
+// executeCommands creates a knftables.Interface and apply all changes to the target system if it is not a test run.
+// If the cfg.testRun is true, it creates a knftables.Fake interface and it will not apply rules to the target system.
 func (cfg *NftablesConfigurator) executeCommands() error {
-	// We require (or rather, knftables.New does) that the nft binary be version 1.0.1
-	// or later, because versions before that would always attempt to parse the entire
-	// nft ruleset at startup, even if you were only operating on a single table.
-	// That's bad, because in some cases, new versions of nft have added new rule
-	// types in ways that triggered bugs in older versions of nft, causing them to
-	// crash.
+	var nft knftables.Interface
+	if !cfg.testRun {
+		nft, err := knftables.New(knftables.InetFamily, constants.IstioProxyNatTable)
+		if err != nil {
+			return err
+		}
+		if err := cfg.addIstioNatTableRules(nft); err != nil {
+			return err
+		}
+		nft, err = knftables.New(knftables.InetFamily, constants.IstioProxyMangleTable)
+		if err != nil {
+			return err
+		}
+		if err := cfg.addIstioMangleTableRules(nft); err != nil {
+			return err
+		}
+		nft, err = knftables.New(knftables.InetFamily, constants.IstioProxyRawTable)
+		if err != nil {
+			return err
+		}
+		if err := cfg.addIstioRawTableRules(nft); err != nil {
+			return err
+		}
+	} else {
+		// testRun is true, this mode is running for testing.
+		nft = knftables.NewFake(knftables.InetFamily, constants.IstioProxyNatTable)
+		if err := cfg.addIstioNatTableRules(nft); err != nil {
+			return err
+		}
+		if err := cfg.buildTestResults(nft, constants.IstioProxyNatTable); err != nil {
+			return err
+		}
+		nft = knftables.NewFake(knftables.InetFamily, constants.IstioProxyMangleTable)
+		if err := cfg.addIstioMangleTableRules(nft); err != nil {
+			return err
+		}
+		if err := cfg.buildTestResults(nft, constants.IstioProxyMangleTable); err != nil {
+			return err
+		}
+		nft = knftables.NewFake(knftables.InetFamily, constants.IstioProxyRawTable)
+		if err := cfg.addIstioRawTableRules(nft); err != nil {
+			return err
+		}
+		if err := cfg.buildTestResults(nft, constants.IstioProxyRawTable); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
-	if err := cfg.addIstioNatTableRules(); err != nil {
-		return err
+func (cfg *NftablesConfigurator) buildTestResults(nft knftables.Interface, table string) error {
+	if len(cfg.ruleBuilder.Rules[table]) != 0 {
+		cfg.testResults = append(cfg.testResults, "# Table: "+table)
+		chains, err := nft.List(context.TODO(), "chain")
+		if err != nil {
+			return err
+		}
+		// FIXME: the nft.List does not return items in order.
+		// So need to sort the results for idempotent testing.
+		sort.Strings(chains)
+		for _, chain := range chains {
+			cfg.testResults = append(cfg.testResults, "# Chain: "+chain)
+			rules, err := nft.ListRules(context.TODO(), chain)
+			if err != nil {
+				return err
+			}
+			for _, rule := range rules {
+				cfg.testResults = append(cfg.testResults, rule.Rule)
+			}
+		}
 	}
-	if err := cfg.addIstioMangleTableRules(); err != nil {
-		return err
-	}
-	if err := cfg.addIstioRawTableRules(); err != nil {
-		return err
-	}
-
 	return nil
 }
 

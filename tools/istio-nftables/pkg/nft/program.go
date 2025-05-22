@@ -23,6 +23,12 @@ import (
 	"istio.io/istio/tools/istio-nftables/pkg/capture"
 )
 
+// We require (or rather, knftables.New does) that the nft binary be version 1.0.1
+// or later, because versions before that would always attempt to parse the entire
+// nft ruleset at startup, even if you were only operating on a single table.
+// That's bad, because in some cases, new versions of nft have added new rule
+// types in ways that triggered bugs in older versions of nft, causing them to
+// crash.
 func ProgramNftables(cfg *config.Config) error {
 	log.Info("native nftables enabled, using nft rules for traffic redirection.")
 
