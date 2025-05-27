@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
-	"sort"
 	"strings"
 
 	"sigs.k8s.io/knftables"
@@ -777,44 +776,35 @@ func (cfg *NftablesConfigurator) handleCaptureByOwnerGroup(filter config.Interce
 func (cfg *NftablesConfigurator) addIstioNatTableRules(nft knftables.Interface) error {
 	tx := nft.NewTransaction()
 	// Ensure that our table exists.
-	tx.Add(&knftables.Table{
-		Comment: knftables.PtrTo(""),
-	})
+	tx.Add(&knftables.Table{})
 
 	// Ensure that our chains exist
 	tx.Add(&knftables.Chain{
 		Name:     constants.PreroutingChain,
-		Comment:  knftables.PtrTo(""),
 		Type:     knftables.PtrTo(knftables.NATType),
 		Hook:     knftables.PtrTo(knftables.PreroutingHook),
 		Priority: knftables.PtrTo(knftables.DNATPriority),
 	})
 	tx.Add(&knftables.Chain{
 		Name:     constants.OutputChain,
-		Comment:  knftables.PtrTo(""),
 		Type:     knftables.PtrTo(knftables.NATType),
 		Hook:     knftables.PtrTo(knftables.OutputHook),
 		Priority: knftables.PtrTo(knftables.DNATPriority),
 	})
 	tx.Add(&knftables.Chain{
-		Name:    constants.IstioInboundChain,
-		Comment: knftables.PtrTo(""),
+		Name: constants.IstioInboundChain,
 	})
 	tx.Add(&knftables.Chain{
-		Name:    constants.IstioRedirectChain,
-		Comment: knftables.PtrTo(""),
+		Name: constants.IstioRedirectChain,
 	})
 	tx.Add(&knftables.Chain{
-		Name:    constants.IstioInRedirectChain,
-		Comment: knftables.PtrTo(""),
+		Name: constants.IstioInRedirectChain,
 	})
 	tx.Add(&knftables.Chain{
-		Name:    constants.IstioOutputChain,
-		Comment: knftables.PtrTo(""),
+		Name: constants.IstioOutputChain,
 	})
 	tx.Add(&knftables.Chain{
-		Name:    constants.IstioOutputDNSChain,
-		Comment: knftables.PtrTo(""),
+		Name: constants.IstioOutputDNSChain,
 	})
 
 	// we use chainRuleCount to keep track of how many rules have been added to each chain.
@@ -851,36 +841,29 @@ func (cfg *NftablesConfigurator) addIstioMangleTableRules(nft knftables.Interfac
 
 	tx := nft.NewTransaction()
 	// Ensure that our table exists.
-	tx.Add(&knftables.Table{
-		Comment: knftables.PtrTo(""),
-	})
+	tx.Add(&knftables.Table{})
 
 	// Ensure that our chains exist
 	tx.Add(&knftables.Chain{
 		Name:     constants.PreroutingChain,
-		Comment:  knftables.PtrTo(""),
 		Type:     knftables.PtrTo(knftables.FilterType),
 		Hook:     knftables.PtrTo(knftables.PreroutingHook),
 		Priority: knftables.PtrTo(knftables.ManglePriority),
 	})
 	tx.Add(&knftables.Chain{
 		Name:     constants.OutputChain,
-		Comment:  knftables.PtrTo(""),
 		Type:     knftables.PtrTo(knftables.FilterType),
 		Hook:     knftables.PtrTo(knftables.OutputHook),
 		Priority: knftables.PtrTo(knftables.ManglePriority),
 	})
 	tx.Add(&knftables.Chain{
-		Name:    constants.IstioDivertChain,
-		Comment: knftables.PtrTo(""),
+		Name: constants.IstioDivertChain,
 	})
 	tx.Add(&knftables.Chain{
-		Name:    constants.IstioTproxyChain,
-		Comment: knftables.PtrTo(""),
+		Name: constants.IstioTproxyChain,
 	})
 	tx.Add(&knftables.Chain{
-		Name:    constants.IstioInboundChain,
-		Comment: knftables.PtrTo(""),
+		Name: constants.IstioInboundChain,
 	})
 
 	// Add Mangle table rules
@@ -900,32 +883,26 @@ func (cfg *NftablesConfigurator) addIstioRawTableRules(nft knftables.Interface) 
 
 	tx := nft.NewTransaction()
 	// Ensure that our table exists.
-	tx.Add(&knftables.Table{
-		Comment: knftables.PtrTo(""),
-	})
+	tx.Add(&knftables.Table{})
 
 	// Ensure that our chains exist
 	tx.Add(&knftables.Chain{
 		Name:     constants.PreroutingChain,
-		Comment:  knftables.PtrTo(""),
 		Type:     knftables.PtrTo(knftables.FilterType),
 		Hook:     knftables.PtrTo(knftables.PreroutingHook),
 		Priority: knftables.PtrTo(knftables.RawPriority),
 	})
 	tx.Add(&knftables.Chain{
 		Name:     constants.OutputChain,
-		Comment:  knftables.PtrTo(""),
 		Type:     knftables.PtrTo(knftables.FilterType),
 		Hook:     knftables.PtrTo(knftables.OutputHook),
 		Priority: knftables.PtrTo(knftables.RawPriority),
 	})
 	tx.Add(&knftables.Chain{
-		Name:    constants.IstioInboundChain,
-		Comment: knftables.PtrTo(""),
+		Name: constants.IstioInboundChain,
 	})
 	tx.Add(&knftables.Chain{
-		Name:    constants.IstioOutputDNSChain,
-		Comment: knftables.PtrTo(""),
+		Name: constants.IstioOutputDNSChain,
 	})
 
 	// Add RAW table rules
@@ -940,7 +917,6 @@ func (cfg *NftablesConfigurator) addIstioRawTableRules(nft knftables.Interface) 
 // executeCommands creates a knftables.Interface and apply all changes to the target system if it is not a test run.
 // If the cfg.testRun is true, it creates a knftables.Fake interface and it will not apply rules to the target system.
 func (cfg *NftablesConfigurator) executeCommands() error {
-	var nft knftables.Interface
 	if !cfg.testRun {
 		nft, err := knftables.New(knftables.InetFamily, constants.IstioProxyNatTable)
 		if err != nil {
@@ -965,51 +941,22 @@ func (cfg *NftablesConfigurator) executeCommands() error {
 		}
 	} else {
 		// testRun is true, this mode is running for testing.
+		var nft *knftables.Fake
 		nft = knftables.NewFake(knftables.InetFamily, constants.IstioProxyNatTable)
 		if err := cfg.addIstioNatTableRules(nft); err != nil {
 			return err
 		}
-		if err := cfg.buildTestResults(nft, constants.IstioProxyNatTable); err != nil {
-			return err
-		}
+		cfg.testResults = append(cfg.testResults, strings.TrimSpace(nft.Dump()))
 		nft = knftables.NewFake(knftables.InetFamily, constants.IstioProxyMangleTable)
 		if err := cfg.addIstioMangleTableRules(nft); err != nil {
 			return err
 		}
-		if err := cfg.buildTestResults(nft, constants.IstioProxyMangleTable); err != nil {
-			return err
-		}
+		cfg.testResults = append(cfg.testResults, strings.TrimSpace(nft.Dump()))
 		nft = knftables.NewFake(knftables.InetFamily, constants.IstioProxyRawTable)
 		if err := cfg.addIstioRawTableRules(nft); err != nil {
 			return err
 		}
-		if err := cfg.buildTestResults(nft, constants.IstioProxyRawTable); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (cfg *NftablesConfigurator) buildTestResults(nft knftables.Interface, table string) error {
-	if len(cfg.ruleBuilder.Rules[table]) != 0 {
-		cfg.testResults = append(cfg.testResults, "# Table: "+table)
-		chains, err := nft.List(context.TODO(), "chain")
-		if err != nil {
-			return err
-		}
-		// FIXME: the nft.List does not return items in order.
-		// So need to sort the results for idempotent testing.
-		sort.Strings(chains)
-		for _, chain := range chains {
-			cfg.testResults = append(cfg.testResults, "# Chain: "+chain)
-			rules, err := nft.ListRules(context.TODO(), chain)
-			if err != nil {
-				return err
-			}
-			for _, rule := range rules {
-				cfg.testResults = append(cfg.testResults, rule.Rule)
-			}
-		}
+		cfg.testResults = append(cfg.testResults, strings.TrimSpace(nft.Dump()))
 	}
 	return nil
 }
