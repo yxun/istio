@@ -197,15 +197,14 @@ func (cfg *NftablesConfigurator) handleInboundPortsInclude() {
 
 func (cfg *NftablesConfigurator) handleOutboundIncludeRules(ipv4NwRange NetworkRange, ipv6NwRange NetworkRange) {
 	// Apply outbound IP inclusions.
-	cfg.ruleBuilder.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable, "jump", constants.IstioRedirectChain)
-
 	if ipv4NwRange.IsWildcard || ipv6NwRange.IsWildcard {
+		cfg.ruleBuilder.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable, "jump", constants.IstioRedirectChain)
 		// Wildcard specified. Redirect all remaining outbound traffic to Envoy.
 		for _, internalInterface := range split(cfg.cfg.RerouteVirtualInterfaces) {
 			cfg.ruleBuilder.InsertRule(
 				constants.PreroutingChain, constants.IstioProxyNatTable, 0, "iifname", internalInterface, "jump", constants.IstioRedirectChain)
 		}
-	} else {
+	} else if len(ipv4NwRange.CIDRs) > 0 || len(ipv6NwRange.CIDRs) > 0 {
 		// User has specified a non-empty list of cidrs to be redirected to Envoy.
 		for _, cidr := range ipv4NwRange.CIDRs {
 			for _, internalInterface := range split(cfg.cfg.RerouteVirtualInterfaces) {

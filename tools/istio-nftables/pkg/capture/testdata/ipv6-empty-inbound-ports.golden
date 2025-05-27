@@ -16,7 +16,6 @@ oifname lo skgid != 1337 return
 skgid 1337 return
 ip daddr 127.0.0.1/32 return
 ip6 daddr ::1/128 return
-jump istio-redirect
 # Chain: istio-output-dns
 # Chain: istio-redirect
 meta l4proto tcp redirect to :15001

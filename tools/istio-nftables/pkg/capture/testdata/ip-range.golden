@@ -1,0 +1,48 @@
+# Table: istio-proxy-nat
+# Chain: istio-in-redirect
+meta l4proto tcp redirect to :15006
+# Chain: istio-inbound
+meta l4proto tcp tcp dport 15008 return
+# Chain: istio-output
+oifname lo ip saddr 127.0.0.6/32 return
+oifname lo meta l4proto tcp ip daddr != 127.0.0.1/32 tcp dport != { 53, 15008 } skuid 3 jump istio-in-redirect
+oifname lo meta l4proto tcp tcp dport != 53 skuid 3 return
+skuid 3 return
+oifname lo meta l4proto tcp ip daddr != 127.0.0.1/32 tcp dport != { 53, 15008 } skuid 4 jump istio-in-redirect
+oifname lo meta l4proto tcp tcp dport != 53 skuid 4 return
+skuid 4 return
+oifname lo meta l4proto tcp ip daddr != 127.0.0.1/32 tcp dport != 15008 skgid 1 jump istio-in-redirect
+oifname lo meta l4proto tcp tcp dport != 53 skgid != 1 return
+skgid 1 return
+oifname lo meta l4proto tcp ip daddr != 127.0.0.1/32 tcp dport != 15008 skgid 2 jump istio-in-redirect
+oifname lo meta l4proto tcp tcp dport != 53 skgid != 2 return
+skgid 2 return
+jump istio-output-dns
+ip daddr 127.0.0.1/32 return
+ip daddr 1.1.0.0/16 return
+ip daddr 9.9.0.0/16 jump istio-redirect
+# Chain: istio-output-dns
+ip daddr 127.0.0.53/32 tcp dport 53 redirect to :15053
+ip daddr 127.0.0.53/32 udp dport 53 redirect to :15053
+# Chain: istio-redirect
+meta l4proto tcp redirect to :15001
+# Chain: output
+jump istio-output
+# Chain: prerouting
+# Table: istio-proxy-raw
+# Chain: istio-inbound
+udp sport 53 ip daddr 127.0.0.53/32 CT zone set 1
+# Chain: istio-output-dns
+udp dport 53 meta skuid 3 CT zone set 1
+udp sport 15053 meta skuid 3 CT zone set 2
+udp dport 53 meta skuid 4 CT zone set 1
+udp sport 15053 meta skuid 4 CT zone set 2
+udp dport 53 meta skgid 1 CT zone set 1
+udp sport 15053 meta skgid 1 CT zone set 2
+udp dport 53 meta skgid 2 CT zone set 1
+udp sport 15053 meta skgid 2 CT zone set 2
+udp dport 53 ip daddr 127.0.0.53/32 CT zone set 2
+# Chain: output
+jump istio-output-dns
+# Chain: prerouting
+jump istio-inbound
