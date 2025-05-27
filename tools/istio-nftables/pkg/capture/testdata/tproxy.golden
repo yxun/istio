@@ -30,6 +30,7 @@ add rule inet istio-proxy-nat output oifname not-istio-nic return
 add rule inet istio-proxy-nat output jump istio-output
 add rule inet istio-proxy-nat prerouting iifname not-istio-nic return
 add table inet istio-proxy-mangle
+add chain inet istio-proxy-mangle ISTIO_DROP
 add chain inet istio-proxy-mangle istio-divert
 add chain inet istio-proxy-mangle istio-inbound
 add chain inet istio-proxy-mangle istio-tproxy

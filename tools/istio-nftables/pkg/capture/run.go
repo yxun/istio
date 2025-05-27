@@ -865,6 +865,9 @@ func (cfg *NftablesConfigurator) addIstioMangleTableRules(nft knftables.Interfac
 	tx.Add(&knftables.Chain{
 		Name: constants.IstioInboundChain,
 	})
+	tx.Add(&knftables.Chain{
+		Name: constants.IstioDropChain,
+	})
 
 	// Add Mangle table rules
 	for _, rule := range cfg.ruleBuilder.Rules[constants.IstioProxyMangleTable] {
