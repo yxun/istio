@@ -20,6 +20,8 @@ add rule inet istio-proxy-nat istio-output oifname lo skgid != 1337 return
 add rule inet istio-proxy-nat istio-output skgid 1337 return
 add rule inet istio-proxy-nat istio-output ip daddr 127.0.0.1/32 return
 add rule inet istio-proxy-nat istio-output ip6 daddr ::1/128 return
+add rule inet istio-proxy-nat istio-output tcp dport 32000 jump istio-redirect
+add rule inet istio-proxy-nat istio-output tcp dport 31000 jump istio-redirect
 add rule inet istio-proxy-nat istio-redirect meta l4proto tcp redirect to :15001
 add rule inet istio-proxy-nat output jump istio-output
 
