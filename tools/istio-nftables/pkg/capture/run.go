@@ -128,14 +128,14 @@ func (cfg *NftablesConfigurator) handleInboundPortsInclude() {
 			cfg.ruleBuilder.AppendRule(constants.IstioTproxyChain, constants.IstioProxyMangleTable,
 				"meta l4proto tcp",
 				"ip daddr", "!=", cfg.cfg.HostIPv4LoopbackCidr,
-				"tproxy to", ":"+cfg.cfg.InboundCapturePort,
-				"meta mark set", cfg.cfg.InboundTProxyMark+"/0xffffffff",
+				"tproxy ip to", ":"+cfg.cfg.InboundCapturePort,
+				"meta mark set", cfg.cfg.InboundTProxyMark,
 				"accept")
 			cfg.ruleBuilder.AppendV6RuleIfSupported(constants.IstioTproxyChain, constants.IstioProxyMangleTable,
 				"meta l4proto tcp",
 				"ip6 daddr", "!=", "::1/128",
-				"tproxy to", ":"+cfg.cfg.InboundCapturePort,
-				"meta mark set", cfg.cfg.InboundTProxyMark+"/0xffffffff",
+				"tproxy ip6 to", ":"+cfg.cfg.InboundCapturePort,
+				"meta mark set", cfg.cfg.InboundTProxyMark,
 				"accept")
 
 			table = constants.IstioProxyMangleTable
@@ -161,7 +161,7 @@ func (cfg *NftablesConfigurator) handleInboundPortsInclude() {
 				// loopback interface.
 				cfg.ruleBuilder.AppendRule(constants.IstioInboundChain, constants.IstioProxyMangleTable,
 					"meta l4proto tcp",
-					"ct state", "RELATED,ESTABLISHED",
+					"ct state", "related,established",
 					"jump", constants.IstioDivertChain)
 				// Otherwise, it's a new connection. Redirect it using TPROXY.
 				cfg.ruleBuilder.AppendRule(constants.IstioInboundChain, constants.IstioProxyMangleTable,
@@ -178,7 +178,7 @@ func (cfg *NftablesConfigurator) handleInboundPortsInclude() {
 				if cfg.cfg.InboundInterceptionMode == "TPROXY" {
 					cfg.ruleBuilder.AppendRule(constants.IstioInboundChain, constants.IstioProxyMangleTable,
 						"meta l4proto tcp",
-						"ct state", "RELATED,ESTABLISHED",
+						"ct state", "related,established",
 						"tcp dport", port,
 						"jump", constants.IstioDivertChain)
 					cfg.ruleBuilder.AppendRule(
@@ -498,7 +498,7 @@ func (cfg *NftablesConfigurator) Run() error {
 		cfg.ruleBuilder.AppendRule(constants.PreroutingChain, constants.IstioProxyMangleTable,
 			"meta l4proto tcp",
 			"mark", cfg.cfg.InboundTProxyMark,
-			"CT mark set mark")
+			"ct mark set mark")
 		// If the packet is already marked with 1337, then return. This is to prevent mark envoy --> app traffic again.
 		cfg.ruleBuilder.AppendRule(constants.OutputChain, constants.IstioProxyMangleTable,
 			"oifname", "lo",
@@ -540,8 +540,8 @@ func (cfg *NftablesConfigurator) Run() error {
 		// mark outgoing packets from workload, match it to policy routing entry setup for TPROXY mode
 		cfg.ruleBuilder.AppendRule(constants.OutputChain, constants.IstioProxyMangleTable,
 			"meta l4proto tcp",
-			"CT", "mark", cfg.cfg.InboundTProxyMark,
-			"meta mark set", "CT", "mark")
+			"ct", "mark", cfg.cfg.InboundTProxyMark,
+			"meta mark set", "ct", "mark")
 		// prevent infinite redirect
 		cfg.ruleBuilder.InsertRule(constants.IstioInboundChain, constants.IstioProxyMangleTable, 0,
 			"meta l4proto tcp",
