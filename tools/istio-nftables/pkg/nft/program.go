@@ -33,7 +33,7 @@ func ProgramNftables(cfg *config.Config) error {
 	log.Info("native nftables enabled, using nft rules for traffic redirection.")
 
 	if !cfg.SkipRuleApply {
-		nftConfigurator, err := capture.NewNftablesConfigurator(cfg)
+		nftConfigurator, err := capture.NewNftablesConfigurator(cfg, nil)
 		if err != nil {
 			return err
 		}

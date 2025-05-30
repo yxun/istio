@@ -14,15 +14,16 @@
 package capture
 
 import (
+	testutil "istio.io/istio/pilot/test/util"
 	"net/netip"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
-	testutil "istio.io/istio/pilot/test/util"
 	"istio.io/istio/tools/common/config"
 	"istio.io/istio/tools/istio-nftables/pkg/constants"
+	"sigs.k8s.io/knftables"
 )
 
 func getCommonTestCases() []struct {
@@ -280,13 +281,36 @@ func TestNftables(t *testing.T) {
 			cfg := constructTestConfig()
 			tt.config(cfg)
 
-			nftConfigurator, _ := NewNftablesConfigurator(cfg)
-			nftConfigurator.testRun = true
+			// Create a map to store mock instances for each table.
+			mocks := make(map[string]*MockNftables)
+
+			nftProvider := func(table string) (NftablesAPI, error) {
+				mock := NewMockNftables(knftables.InetFamily, table)
+				mocks[table] = mock
+				return mock, nil
+			}
+
+			nftConfigurator, _ := NewNftablesConfigurator(cfg, nftProvider)
 			err := nftConfigurator.Run()
 			if err != nil {
 				t.Fatal(err)
 			}
-			compareToGolden(t, tt.name, nftConfigurator.testResults)
+
+			// Collect the output/dump from all tables
+			var dumps []string
+			for _, table := range []string{
+				constants.IstioProxyNatTable,
+				constants.IstioProxyMangleTable,
+				constants.IstioProxyRawTable,
+			} {
+				if mock, exists := mocks[table]; exists {
+					dump := mock.Dump()
+					if dump != "" {
+						dumps = append(dumps, dump)
+					}
+				}
+			}
+			compareToGolden(t, tt.name, dumps)
 		})
 	}
 }
@@ -329,8 +353,10 @@ func TestSeparateV4V6(t *testing.T) {
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := constructTestConfig()
-			nftConfigurator, _ := NewNftablesConfigurator(cfg)
-			nftConfigurator.testRun = true
+			nftProvider := func(table string) (NftablesAPI, error) {
+				return NewMockNftables(knftables.InetFamily, table), nil
+			}
+			nftConfigurator, _ := NewNftablesConfigurator(cfg, nftProvider)
 			v4Range, v6Range, err := nftConfigurator.separateV4V6(tt.cidr)
 			if err != nil {
 				t.Fatal(err)

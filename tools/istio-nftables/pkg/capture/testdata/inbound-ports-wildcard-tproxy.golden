@@ -18,6 +18,7 @@ add rule inet istio-proxy-nat istio-output skgid 1337 return
 add rule inet istio-proxy-nat istio-output ip daddr 127.0.0.1/32 return
 add rule inet istio-proxy-nat istio-redirect meta l4proto tcp redirect to :15001
 add rule inet istio-proxy-nat output jump istio-output
+
 add table inet istio-proxy-mangle
 add chain inet istio-proxy-mangle ISTIO_DROP
 add chain inet istio-proxy-mangle istio-divert
