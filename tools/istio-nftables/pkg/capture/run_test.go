@@ -14,12 +14,13 @@
 package capture
 
 import (
-	testutil "istio.io/istio/pilot/test/util"
 	"net/netip"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	testutil "istio.io/istio/pilot/test/util"
 
 	"istio.io/istio/tools/common/config"
 	"istio.io/istio/tools/istio-nftables/pkg/constants"
@@ -291,7 +292,7 @@ func TestNftables(t *testing.T) {
 			}
 
 			nftConfigurator, _ := NewNftablesConfigurator(cfg, nftProvider)
-			err := nftConfigurator.Run()
+			tableTx, err := nftConfigurator.Run()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -304,7 +305,7 @@ func TestNftables(t *testing.T) {
 				constants.IstioProxyRawTable,
 			} {
 				if mock, exists := mocks[table]; exists {
-					dump := mock.Dump()
+					dump := mock.Dump(tableTx[table])
 					if dump != "" {
 						dumps = append(dumps, dump)
 					}

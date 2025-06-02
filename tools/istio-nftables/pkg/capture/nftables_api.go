@@ -22,7 +22,7 @@ import (
 type NftablesAPI interface {
 	NewTransaction() *knftables.Transaction
 	Run(ctx context.Context, tx *knftables.Transaction) error
-	Dump() string
+	Dump(tx *knftables.Transaction) string
 }
 
 // RealNftables implements NftablesAPI
@@ -30,7 +30,7 @@ type RealNftables struct {
 	nft knftables.Interface
 }
 
-func (r *RealNftables) Dump() string {
+func (r *RealNftables) Dump(tx *knftables.Transaction) string {
 	// We do not use Dump in the real Interface.
 	return ""
 }
@@ -64,6 +64,8 @@ func NewMockNftables(family knftables.Family, table string) *MockNftables {
 	}
 }
 
-func (m *MockNftables) Dump() string {
-	return m.Fake.Dump()
+// Dump dumps the current contents of a Transaction.
+// We don't want to sort objects in the Dump result so we are not using the Fake.Dump method.
+func (m *MockNftables) Dump(tx *knftables.Transaction) string {
+	return tx.String()
 }

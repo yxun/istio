@@ -254,22 +254,22 @@ func (cfg *NftablesConfigurator) shortCircuitExcludeInterfaces() {
 	}
 }
 
-func (cfg *NftablesConfigurator) Run() error {
+func (cfg *NftablesConfigurator) Run() (map[string]*knftables.Transaction, error) {
 	// Since OUTBOUND_IP_RANGES_EXCLUDE could carry ipv4 and ipv6 ranges
 	// need to split them in different arrays one for ipv4 and one for ipv6
 	// in order to not to fail
 	ipv4RangesExclude, ipv6RangesExclude, err := cfg.separateV4V6(cfg.cfg.OutboundIPRangesExclude)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if ipv4RangesExclude.IsWildcard {
-		return fmt.Errorf("invalid value for OUTBOUND_IP_RANGES_EXCLUDE")
+		return nil, fmt.Errorf("invalid value for OUTBOUND_IP_RANGES_EXCLUDE")
 	}
 	// FixMe: Do we need similar check for ipv6RangesExclude as well ??
 
 	ipv4RangesInclude, ipv6RangesInclude, err := cfg.separateV4V6(cfg.cfg.OutboundIPRangesInclude)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	redirectDNS := cfg.cfg.RedirectDNS
@@ -781,10 +781,10 @@ func (cfg *NftablesConfigurator) handleCaptureByOwnerGroup(filter config.Interce
 	}
 }
 
-func (cfg *NftablesConfigurator) addIstioNatTableRules() error {
+func (cfg *NftablesConfigurator) addIstioNatTableRules() (*knftables.Transaction, error) {
 	nft, err := cfg.nftProvider(constants.IstioProxyNatTable)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	tx := nft.NewTransaction()
@@ -843,18 +843,18 @@ func (cfg *NftablesConfigurator) addIstioNatTableRules() error {
 	}
 
 	// Apply changes in this transaction
-	return nft.Run(context.TODO(), tx)
+	return tx, nft.Run(context.TODO(), tx)
 }
 
-func (cfg *NftablesConfigurator) addIstioMangleTableRules() error {
+func (cfg *NftablesConfigurator) addIstioMangleTableRules() (*knftables.Transaction, error) {
 	// If there are no rules to be added to the IstioProxyMangleTable, skip creating the associated tables and chains.
 	if len(cfg.ruleBuilder.Rules[constants.IstioProxyMangleTable]) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	nft, err := cfg.nftProvider(constants.IstioProxyMangleTable)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	tx := nft.NewTransaction()
@@ -894,18 +894,18 @@ func (cfg *NftablesConfigurator) addIstioMangleTableRules() error {
 	}
 
 	// Apply changes in this transaction
-	return nft.Run(context.TODO(), tx)
+	return tx, nft.Run(context.TODO(), tx)
 }
 
-func (cfg *NftablesConfigurator) addIstioRawTableRules() error {
+func (cfg *NftablesConfigurator) addIstioRawTableRules() (*knftables.Transaction, error) {
 	// If there are no rules to be added to the IstioProxyRawTable, skip creating the associated tables and chains.
 	if len(cfg.ruleBuilder.Rules[constants.IstioProxyRawTable]) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	nft, err := cfg.nftProvider(constants.IstioProxyRawTable)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	tx := nft.NewTransaction()
@@ -939,28 +939,33 @@ func (cfg *NftablesConfigurator) addIstioRawTableRules() error {
 	}
 
 	// Apply changes in this transaction
-	return nft.Run(context.TODO(), tx)
+	return tx, nft.Run(context.TODO(), tx)
 }
 
 // executeCommands creates a knftables.Interface and apply all changes to the target system if it is not a test run.
 // If the cfg.testRun is true, it creates a knftables.Fake interface and it will not apply rules to the target system.
-func (cfg *NftablesConfigurator) executeCommands() error {
-	addErr := cfg.addIstioNatTableRules()
-	if addErr != nil {
-		return addErr
-	}
+func (cfg *NftablesConfigurator) executeCommands() (map[string]*knftables.Transaction, error) {
+	tableTx := make(map[string]*knftables.Transaction)
 
-	addErr = cfg.addIstioMangleTableRules()
+	tx, addErr := cfg.addIstioNatTableRules()
 	if addErr != nil {
-		return addErr
+		return nil, addErr
 	}
+	tableTx[constants.IstioProxyNatTable] = tx
 
-	addErr = cfg.addIstioRawTableRules()
+	tx, addErr = cfg.addIstioMangleTableRules()
 	if addErr != nil {
-		return addErr
+		return nil, addErr
 	}
+	tableTx[constants.IstioProxyMangleTable] = tx
 
-	return nil
+	tx, addErr = cfg.addIstioRawTableRules()
+	if addErr != nil {
+		return nil, addErr
+	}
+	tableTx[constants.IstioProxyRawTable] = tx
+
+	return tableTx, nil
 }
 
 func CombineMatchers(values []string, matcher func(value string) []string) []string {
