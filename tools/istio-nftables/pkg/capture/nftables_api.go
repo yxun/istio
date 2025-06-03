@@ -19,22 +19,27 @@ import (
 	"sigs.k8s.io/knftables"
 )
 
+// NftablesAPI defines the interface for interacting with nftables.
+// It supports creating a transaction, running it, and optionally dumping the config (mainly for testing).
 type NftablesAPI interface {
 	NewTransaction() *knftables.Transaction
 	Run(ctx context.Context, tx *knftables.Transaction) error
 	Dump(tx *knftables.Transaction) string
 }
 
-// RealNftables implements NftablesAPI
+// RealNftables is the real implementation of NftablesAPI using the actual knftables backend.
 type RealNftables struct {
 	nft knftables.Interface
 }
 
+// Dump is part of the interface but not used in the real implementation. It's used as part of unit tests.
 func (r *RealNftables) Dump(tx *knftables.Transaction) string {
 	// We do not use Dump in the real Interface.
 	return ""
 }
 
+// NewRealNftables creates and returns a RealNftables object.
+// It sets up the actual knftables interface for the given family and table.
 func NewRealNftables(family knftables.Family, table string) (*RealNftables, error) {
 	nft, err := knftables.New(family, table)
 	if err != nil {
@@ -43,20 +48,24 @@ func NewRealNftables(family knftables.Family, table string) (*RealNftables, erro
 	return &RealNftables{nft: nft}, nil
 }
 
+// NewTransaction starts a new transaction using the real knftables backend.
 func (r *RealNftables) NewTransaction() *knftables.Transaction {
 	return r.nft.NewTransaction()
 }
 
+// Run applies a transaction using the real knftables interface.
 func (r *RealNftables) Run(ctx context.Context, tx *knftables.Transaction) error {
 	return r.nft.Run(ctx, tx)
 }
 
-// MockNftables implements NftablesAPI for testing
+// MockNftables is a mock implementation of NftablesAPI for use in unit tests.
+// It uses knftables.Fake to simulate nftables behavior without making changes to the system.
 type MockNftables struct {
 	*knftables.Fake
 	DumpResults []string
 }
 
+// NewMockNftables creates a new mock object with a fake backend. It is used in the unit tests.
 func NewMockNftables(family knftables.Family, table string) *MockNftables {
 	return &MockNftables{
 		Fake:        knftables.NewFake(family, table),
@@ -64,7 +73,7 @@ func NewMockNftables(family knftables.Family, table string) *MockNftables {
 	}
 }
 
-// Dump dumps the current contents of a Transaction.
+// Dump returns the current mock table state as a string.
 // We don't want to sort objects in the Dump result so we are not using the Fake.Dump method.
 func (m *MockNftables) Dump(tx *knftables.Transaction) string {
 	return tx.String()

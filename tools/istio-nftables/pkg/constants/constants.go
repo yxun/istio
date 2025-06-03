@@ -79,6 +79,5 @@ Only applies when traffic from all groups (i.e. "*") is being redirected to Envo
 )
 
 const (
-	DefaultProxyUID    = "1337"
-	DefaultProxyUIDInt = int64(1337)
+	DefaultProxyUID = "1337"
 )

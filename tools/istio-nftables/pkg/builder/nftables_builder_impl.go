@@ -25,11 +25,13 @@ var IstioTableNames = []string{
 	constants.IstioProxyNatTable, constants.IstioProxyMangleTable, constants.IstioProxyRawTable,
 }
 
+// NftablesRuleBuilder is a builder struct to manage nftables rules in memory before applying them on the platform.
 type NftablesRuleBuilder struct {
 	Rules map[string][]knftables.Rule
 	cfg   *config.Config
 }
 
+// NewNftablesRuleBuilder creates a new rule builder with an empty rule list for each Istio table.
 func NewNftablesRuleBuilder(cfg *config.Config) *NftablesRuleBuilder {
 	if cfg == nil {
 		cfg = &config.Config{}
@@ -44,6 +46,7 @@ func NewNftablesRuleBuilder(cfg *config.Config) *NftablesRuleBuilder {
 	}
 }
 
+// InsertRule adds a rule at a specific position in the given chain and table.
 func (rb *NftablesRuleBuilder) InsertRule(chain string, table string, position int, params ...string) *NftablesRuleBuilder {
 	rule := knftables.Rule{
 		Chain: chain,
@@ -54,6 +57,7 @@ func (rb *NftablesRuleBuilder) InsertRule(chain string, table string, position i
 	return rb
 }
 
+// InsertV6RuleIfSupported inserts a rule only if IPv6 is enabled in the config.
 func (rb *NftablesRuleBuilder) InsertV6RuleIfSupported(chain string, table string, position int, params ...string) *NftablesRuleBuilder {
 	if rb.cfg.EnableIPv6 {
 		return rb.InsertRule(chain, table, position, params...)
@@ -62,6 +66,7 @@ func (rb *NftablesRuleBuilder) InsertV6RuleIfSupported(chain string, table strin
 	return nil
 }
 
+// AppendRule adds a rule to the end of the chain in the given table.
 func (rb *NftablesRuleBuilder) AppendRule(chain string, table string, params ...string) *NftablesRuleBuilder {
 	rule := knftables.Rule{
 		Chain: chain,
@@ -71,6 +76,7 @@ func (rb *NftablesRuleBuilder) AppendRule(chain string, table string, params ...
 	return rb
 }
 
+// AppendV6RuleIfSupported appends a rule only if IPv6 is enabled in the config.
 func (rb *NftablesRuleBuilder) AppendV6RuleIfSupported(chain string, table string, params ...string) *NftablesRuleBuilder {
 	if rb.cfg.EnableIPv6 {
 		return rb.AppendRule(chain, table, params...)

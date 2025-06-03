@@ -16,14 +16,13 @@ package builder
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"sigs.k8s.io/knftables"
 
 	testutil "istio.io/istio/pilot/test/util"
 	"istio.io/istio/tools/common/config"
-	"sigs.k8s.io/knftables"
 )
 
 var (
@@ -38,7 +37,7 @@ func compareToGolden(t *testing.T, name string, actual string) {
 	testutil.CompareContent(t, gotBytes, goldenFile)
 }
 
-// buildRules creats a knftables.Fake interface for testing. It does not apply rules to the target system.
+// buildRules creates a knftables.Fake interface for testing. It does not apply rules to the target system.
 func buildRules(t *testing.T, builder *NftablesRuleBuilder) string {
 	nft := knftables.NewFake(knftables.InetFamily, testTable)
 	tx := nft.NewTransaction()
@@ -134,22 +133,16 @@ func TestBuilder(t *testing.T) {
 			},
 		},
 	}
+
 	builderConfig := &config.Config{
 		EnableIPv6: true,
-	}
-
-	checkFunc := func(goldenName string, rules string) {
-		// check that rules are set
-		var actual strings.Builder
-		fmt.Fprintln(&actual, rules)
-		compareToGolden(t, goldenName, actual.String())
 	}
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			nftables := NewNftablesRuleBuilder(builderConfig)
 			tt.config(nftables)
-			checkFunc(tt.name, buildRules(t, nftables))
+			compareToGolden(t, tt.name, buildRules(t, nftables))
 		})
 	}
 }

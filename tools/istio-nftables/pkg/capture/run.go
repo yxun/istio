@@ -28,13 +28,16 @@ import (
 	"istio.io/istio/tools/istio-nftables/pkg/constants"
 )
 
+// NftablesConfigurator is the main struct used to create nftables rules based on Istio configuration.
+// It builds the necessary rules and applies them using a provided nftProvider function.
 type NftablesConfigurator struct {
 	cfg              *config.Config
 	NetworkNamespace string
-	ruleBuilder      *builder.NftablesRuleBuilder
+	ruleBuilder      *builder.NftablesRuleBuilder // Helper to construct nftables rules
 	nftProvider      func(table string) (NftablesAPI, error)
 }
 
+// NetworkRange is used to hold IPv4 or IPv6 ranges.
 type NetworkRange struct {
 	IsWildcard    bool
 	CIDRs         []netip.Prefix
@@ -45,6 +48,8 @@ func split(s string) []string {
 	return config.Split(s)
 }
 
+// NewNftablesConfigurator initializes a new configurator instance.
+// If nftProvider is not supplied, it uses the real system provider with the default inet family.
 func NewNftablesConfigurator(cfg *config.Config, nftProvider func(table string) (NftablesAPI, error)) (*NftablesConfigurator, error) {
 	if cfg == nil {
 		cfg = &config.Config{}
@@ -64,6 +69,8 @@ func NewNftablesConfigurator(cfg *config.Config, nftProvider func(table string) 
 	}, nil
 }
 
+// separateV4V6 takes a comma-separated CIDR string and splits it into separate IPv4 and IPv6 ranges.
+// It also marks whether loopback IPs are included and handles wildcard ("*") case.
 func (cfg *NftablesConfigurator) separateV4V6(cidrList string) (NetworkRange, NetworkRange, error) {
 	if cidrList == "*" {
 		return NetworkRange{IsWildcard: true}, NetworkRange{IsWildcard: true}, nil
@@ -94,6 +101,8 @@ func (cfg *NftablesConfigurator) separateV4V6(cidrList string) (NetworkRange, Ne
 	return ipv4Ranges, ipv6Ranges, nil
 }
 
+// logConfig prints out the current environment variable values and the loaded config.
+// This is useful for debugging to verify which settings are being used.
 func (cfg *NftablesConfigurator) logConfig() {
 	// Dump out our environment for debugging purposes.
 	var b strings.Builder
@@ -113,6 +122,10 @@ func (cfg *NftablesConfigurator) logConfig() {
 	cfg.cfg.Print()
 }
 
+// handleInboundPortsInclude sets up rules to redirect inbound TCP traffic to Envoy.
+// If TPROXY is enabled, it adds rules to mark packets and route them through mangle tables.
+// It also handles excluded ports and loopback exceptions, based on the config.
+// The goal here is to make sure incoming traffic reaches Envoy before going to the actual app.
 func (cfg *NftablesConfigurator) handleInboundPortsInclude() {
 	// Handling of inbound ports. Traffic will be redirected to Envoy, which will process and forward
 	// to the local service. If not set, no inbound port will be intercepted by istio nftablesOrFail.
@@ -129,9 +142,8 @@ func (cfg *NftablesConfigurator) handleInboundPortsInclude() {
 				"meta mark set", cfg.cfg.InboundTProxyMark)
 			cfg.ruleBuilder.AppendRule(constants.IstioDivertChain, constants.IstioProxyMangleTable, "accept")
 
-			// Create a new chain for redirecting inbound traffic to the common Envoy
-			// port.
-			// In the IstioInboundChain chain, 'counter RETURN' bypasses Envoy and
+			// Create a new chain for redirecting inbound traffic to the common Envoy port.
+			// In the IstioInboundChain chain, 'return' bypasses Envoy and
 			// 'jump IstioTproxyChain' redirects to Envoy.
 			cfg.ruleBuilder.AppendRule(constants.IstioTproxyChain, constants.IstioProxyMangleTable,
 				"meta l4proto tcp",
@@ -165,8 +177,7 @@ func (cfg *NftablesConfigurator) handleInboundPortsInclude() {
 			}
 			// Redirect remaining inbound traffic to Envoy.
 			if cfg.cfg.InboundInterceptionMode == "TPROXY" {
-				// If an inbound packet belongs to an established socket, route it to the
-				// loopback interface.
+				// If an inbound packet belongs to an established socket, route it to the loopback interface.
 				cfg.ruleBuilder.AppendRule(constants.IstioInboundChain, constants.IstioProxyMangleTable,
 					"meta l4proto tcp",
 					"ct state", "related,established",
@@ -202,6 +213,9 @@ func (cfg *NftablesConfigurator) handleInboundPortsInclude() {
 	}
 }
 
+// handleOutboundIncludeRules sets up redirection for outbound traffic to Envoy based on the IP ranges included in the config.
+// If the config contains "*", it means all outbound traffic should be captured.
+// Otherwise, only the specified IPv4 and IPv6 CIDRs will be captured and redirected.
 func (cfg *NftablesConfigurator) handleOutboundIncludeRules(ipv4NwRange NetworkRange, ipv6NwRange NetworkRange) {
 	// Apply outbound IP inclusions.
 	if ipv4NwRange.IsWildcard || ipv6NwRange.IsWildcard {
@@ -232,12 +246,16 @@ func (cfg *NftablesConfigurator) handleOutboundIncludeRules(ipv4NwRange NetworkR
 	}
 }
 
+// shortCircuitKubeInternalInterface adds a rule to skip traffic redirection for configured interfaces.
 func (cfg *NftablesConfigurator) shortCircuitKubeInternalInterface() {
 	for _, internalInterface := range split(cfg.cfg.RerouteVirtualInterfaces) {
 		cfg.ruleBuilder.InsertRule(constants.PreroutingChain, constants.IstioProxyNatTable, 0, "iifname", internalInterface, "return")
 	}
 }
 
+// shortCircuitExcludeInterfaces adds return rules to skip both NAT and mangle table processing
+// for the interfaces listed in ExcludeInterfaces. This is useful when you want to avoid capturing
+// traffic from specific network interfaces.
 func (cfg *NftablesConfigurator) shortCircuitExcludeInterfaces() {
 	for _, excludeInterface := range split(cfg.cfg.ExcludeInterfaces) {
 		cfg.ruleBuilder.AppendRule(
@@ -254,6 +272,9 @@ func (cfg *NftablesConfigurator) shortCircuitExcludeInterfaces() {
 	}
 }
 
+// Run is the main function that builds and applies nftables rules based on the provided configuration.
+// It handles exclusion and inclusion logic for inbound and outbound traffic, DNS redirection,
+// owner-based filtering, TPROXY mark handling, and finally applies all the rules.
 func (cfg *NftablesConfigurator) Run() (map[string]*knftables.Transaction, error) {
 	// Since OUTBOUND_IP_RANGES_EXCLUDE could carry ipv4 and ipv6 ranges
 	// need to split them in different arrays one for ipv4 and one for ipv6
@@ -265,7 +286,6 @@ func (cfg *NftablesConfigurator) Run() (map[string]*knftables.Transaction, error
 	if ipv4RangesExclude.IsWildcard {
 		return nil, fmt.Errorf("invalid value for OUTBOUND_IP_RANGES_EXCLUDE")
 	}
-	// FixMe: Do we need similar check for ipv6RangesExclude as well ??
 
 	ipv4RangesInclude, ipv6RangesInclude, err := cfg.separateV4V6(cfg.cfg.OutboundIPRangesInclude)
 	if err != nil {
@@ -281,9 +301,8 @@ func (cfg *NftablesConfigurator) Run() (map[string]*knftables.Transaction, error
 
 	cfg.logConfig()
 
+	// Add rules to skip specific interfaces from redirection.
 	cfg.shortCircuitExcludeInterfaces()
-
-	// Do not capture internal interface.
 	cfg.shortCircuitKubeInternalInterface()
 
 	// Create a rule for invalid drop in PREROUTING chain in mangle table, so the nftables will drop the out of window packets instead of reset connection .
@@ -317,12 +336,10 @@ func (cfg *NftablesConfigurator) Run() (map[string]*knftables.Transaction, error
 		"meta l4proto tcp",
 		"redirect to", ":"+cfg.cfg.InboundCapturePort)
 
+	// Setup rules to intercept inbound traffic.
 	cfg.handleInboundPortsInclude()
 
-	// TODO: change the default behavior to not intercept any output - user may use http_proxy or another
-	// nftablesOrFail wrapper (like ufw). Current default is similar with 0.1
-	// Jump to the IstioOutputChain chain from OUTPUT chain for all traffic
-	// NOTE: udp traffic will be optionally shunted (or no-op'd) within the IstioOutputChain chain, we don't need a conditional jump here.
+	// Send all output traffic to the output chain
 	cfg.ruleBuilder.AppendRule(constants.OutputChain, constants.IstioProxyNatTable, "jump", constants.IstioOutputChain)
 
 	// Apply port based exclusions. Must be applied before connections back to self are redirected.
@@ -333,7 +350,7 @@ func (cfg *NftablesConfigurator) Run() (map[string]*knftables.Transaction, error
 		}
 	}
 
-	// 127.0.0.6/::6 is bind connect from inbound passthrough cluster
+	// 127.0.0.6 and ::6 is bind connect from inbound passthrough cluster
 	cfg.ruleBuilder.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable, "oifname", "lo", "ip saddr", "127.0.0.6/32", "return")
 	cfg.ruleBuilder.AppendV6RuleIfSupported(constants.IstioOutputChain, constants.IstioProxyNatTable, "oifname", "lo", "ip6 saddr", "::6/128", "return")
 
@@ -577,8 +594,7 @@ func (cfg *NftablesConfigurator) Run() (map[string]*knftables.Transaction, error
 	return cfg.executeCommands()
 }
 
-// SetupDNSRedir is a helper function to tackle with DNS UDP specific operations.
-// This helps the creation logic of DNS UDP rules in sync with the deletion.
+// SetupDNSRedir is a helper function for supporting DNS redirection use-cases.
 func (cfg *NftablesConfigurator) SetupDNSRedir(nft *builder.NftablesRuleBuilder, proxyUID, proxyGID string,
 	dnsServersV4 []string, dnsServersV6 []string, captureAllDNS bool, ownerGroupsFilter config.InterceptFilter,
 ) {
@@ -709,7 +725,6 @@ func (cfg *NftablesConfigurator) addDNSConntrackZones(
 	// to the ISTIO_INBOUND chain here, because otherwise it is possible to create a jump to an empty chain,
 	// which the reconciliation logic currently ignores/won't clean up.
 	//
-	// TODO in practice this is harmless - a jump to an empty chain is a no-op - but it borks tests.
 	if captureAllDNS {
 		nft.AppendRule(constants.PreroutingChain, constants.IstioProxyRawTable, "jump", constants.IstioInboundChain)
 		// Not specifying destination address is useful for the CNI case where pod DNS server address cannot be decided.
@@ -756,15 +771,20 @@ func (cfg *NftablesConfigurator) addDNSConntrackZones(
 	}
 }
 
+// handleOutboundPortsInclude checks if there are any outbound ports to include for redirection.
+// If yes, it splits the list of ports and adds a rule for each port to redirect TCP traffic.
+// This makes sure traffic to these ports gets redirected properly in the IstioProxyNatTable table.
 func (cfg *NftablesConfigurator) handleOutboundPortsInclude() {
 	if cfg.cfg.OutboundPortsInclude != "" {
 		for _, port := range split(cfg.cfg.OutboundPortsInclude) {
+			// For each port, add a rule to redirect TCP traffic on that port from the OUTPUT chain in the NAT table to the redirect chain
 			cfg.ruleBuilder.AppendRule(
 				constants.IstioOutputChain, constants.IstioProxyNatTable, "tcp dport", port, "jump", constants.IstioRedirectChain)
 		}
 	}
 }
 
+// handleCaptureByOwnerGroup adds rules based on the socket owner group ID (skgid).
 func (cfg *NftablesConfigurator) handleCaptureByOwnerGroup(filter config.InterceptFilter) {
 	if filter.Except {
 		for _, group := range filter.Values {
@@ -781,6 +801,8 @@ func (cfg *NftablesConfigurator) handleCaptureByOwnerGroup(filter config.Interce
 	}
 }
 
+// addIstioNatTableRules sets up nftables rules in the IstioProxyNatTable table for Istio proxy.
+// It makes sure the table and the necessary chains exist, then adds rules from the rule builder.
 func (cfg *NftablesConfigurator) addIstioNatTableRules() (*knftables.Transaction, error) {
 	nft, err := cfg.nftProvider(constants.IstioProxyNatTable)
 	if err != nil {
@@ -788,10 +810,11 @@ func (cfg *NftablesConfigurator) addIstioNatTableRules() (*knftables.Transaction
 	}
 
 	tx := nft.NewTransaction()
-	// Ensure that our table exists.
+
+	// Ensure that the table exists.
 	tx.Add(&knftables.Table{})
 
-	// Ensure that our chains exist
+	// Ensure that the chains exist
 	tx.Add(&knftables.Chain{
 		Name:     constants.PreroutingChain,
 		Type:     knftables.PtrTo(knftables.NATType),
@@ -846,6 +869,8 @@ func (cfg *NftablesConfigurator) addIstioNatTableRules() (*knftables.Transaction
 	return tx, nft.Run(context.TODO(), tx)
 }
 
+// addIstioMangleTableRules adds nftables rules to the IstioProxyMangleTable table for Istio proxy.
+// It makes sure the table and the necessary chains exist, then adds rules from the rule builder.
 func (cfg *NftablesConfigurator) addIstioMangleTableRules() (*knftables.Transaction, error) {
 	// If there are no rules to be added to the IstioProxyMangleTable, skip creating the associated tables and chains.
 	if len(cfg.ruleBuilder.Rules[constants.IstioProxyMangleTable]) == 0 {
@@ -859,10 +884,10 @@ func (cfg *NftablesConfigurator) addIstioMangleTableRules() (*knftables.Transact
 
 	tx := nft.NewTransaction()
 
-	// Ensure that our table exists.
+	// Ensure that the table exists.
 	tx.Add(&knftables.Table{})
 
-	// Ensure that our chains exist
+	// Ensure that the chains exist
 	tx.Add(&knftables.Chain{
 		Name:     constants.PreroutingChain,
 		Type:     knftables.PtrTo(knftables.FilterType),
@@ -888,7 +913,7 @@ func (cfg *NftablesConfigurator) addIstioMangleTableRules() (*knftables.Transact
 		Name: constants.IstioDropChain,
 	})
 
-	// Add Mangle table rules
+	// Add the necessary rules.
 	for _, rule := range cfg.ruleBuilder.Rules[constants.IstioProxyMangleTable] {
 		tx.Add(&rule)
 	}
@@ -897,6 +922,8 @@ func (cfg *NftablesConfigurator) addIstioMangleTableRules() (*knftables.Transact
 	return tx, nft.Run(context.TODO(), tx)
 }
 
+// addIstioRawTableRules adds nftables rules to the IstioProxyRawTable table for Istio proxy.
+// It makes sure the table and the necessary chains exist, then adds rules from the rule builder.
 func (cfg *NftablesConfigurator) addIstioRawTableRules() (*knftables.Transaction, error) {
 	// If there are no rules to be added to the IstioProxyRawTable, skip creating the associated tables and chains.
 	if len(cfg.ruleBuilder.Rules[constants.IstioProxyRawTable]) == 0 {
@@ -910,10 +937,10 @@ func (cfg *NftablesConfigurator) addIstioRawTableRules() (*knftables.Transaction
 
 	tx := nft.NewTransaction()
 
-	// Ensure that our table exists.
+	// Ensure that the table exists.
 	tx.Add(&knftables.Table{})
 
-	// Ensure that our chains exist
+	// Ensure that the chains exist
 	tx.Add(&knftables.Chain{
 		Name:     constants.PreroutingChain,
 		Type:     knftables.PtrTo(knftables.FilterType),
@@ -933,7 +960,7 @@ func (cfg *NftablesConfigurator) addIstioRawTableRules() (*knftables.Transaction
 		Name: constants.IstioOutputDNSChain,
 	})
 
-	// Add RAW table rules
+	// Add the necessary rules.
 	for _, rule := range cfg.ruleBuilder.Rules[constants.IstioProxyRawTable] {
 		tx.Add(&rule)
 	}
@@ -942,8 +969,9 @@ func (cfg *NftablesConfigurator) addIstioRawTableRules() (*knftables.Transaction
 	return tx, nft.Run(context.TODO(), tx)
 }
 
-// executeCommands creates a knftables.Interface and apply all changes to the target system if it is not a test run.
-// If the cfg.testRun is true, it creates a knftables.Fake interface and it will not apply rules to the target system.
+// executeCommands runs all the steps to add nftables rules for Istio.
+// It calls separate functions to add rules for NAT, MANGLE, and RAW tables one by one.
+// If any step fails, it stops and returns the error right away.
 func (cfg *NftablesConfigurator) executeCommands() (map[string]*knftables.Transaction, error) {
 	tableTx := make(map[string]*knftables.Transaction)
 
@@ -968,6 +996,9 @@ func (cfg *NftablesConfigurator) executeCommands() (map[string]*knftables.Transa
 	return tableTx, nil
 }
 
+// CombineMatchers takes a list of values and a matcher function.
+// For each value, it calls the matcher function to get a list of conditions,
+// then it combines all those lists into one big list using Flatten.
 func CombineMatchers(values []string, matcher func(value string) []string) []string {
 	matchers := make([][]string, 0, len(values))
 	for _, value := range values {
@@ -976,6 +1007,8 @@ func CombineMatchers(values []string, matcher func(value string) []string) []str
 	return Flatten(matchers...)
 }
 
+// Flatten takes many lists of strings and joins them into a single list and appends all the elements
+// from each list one after another.
 func Flatten(lists ...[]string) []string {
 	var result []string
 	for _, list := range lists {

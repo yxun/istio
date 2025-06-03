@@ -20,11 +20,11 @@ import (
 	"strings"
 	"testing"
 
-	testutil "istio.io/istio/pilot/test/util"
+	"sigs.k8s.io/knftables"
 
+	testutil "istio.io/istio/pilot/test/util"
 	"istio.io/istio/tools/common/config"
 	"istio.io/istio/tools/istio-nftables/pkg/constants"
-	"sigs.k8s.io/knftables"
 )
 
 func getCommonTestCases() []struct {
