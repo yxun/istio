@@ -38,7 +38,7 @@ func ProgramNftables(cfg *config.Config) error {
 			return err
 		}
 
-		if err := nftConfigurator.Run(); err != nil {
+		if _, err := nftConfigurator.Run(); err != nil {
 			return err
 		}
 		if err := tproxy.ConfigureRoutes(cfg); err != nil {
