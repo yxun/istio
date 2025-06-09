@@ -310,7 +310,7 @@ func (cfg *NftablesConfigurator) Run() (map[string]*knftables.Transaction, error
 	if dropInvalid {
 		cfg.ruleBuilder.AppendRule(constants.PreroutingChain, constants.IstioProxyMangleTable,
 			"meta l4proto tcp",
-			"ct state", "INVALID",
+			"ct state", "invalid",
 			"jump", constants.IstioDropChain)
 		cfg.ruleBuilder.AppendRule(constants.IstioDropChain, constants.IstioProxyMangleTable, "drop")
 	}
@@ -607,11 +607,7 @@ func (cfg *NftablesConfigurator) SetupDNSRedir(nft *builder.NftablesRuleBuilder,
 	//
 	// TODO we should probably *conditionally* create jumps if and only if rules exist in the jumped-to table,
 	// in a more automatic fashion.
-	if captureAllDNS || len(dnsServersV4) > 0 {
-		nft.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable, "jump", constants.IstioOutputDNSChain)
-	}
-
-	if captureAllDNS || len(dnsServersV6) > 0 {
+	if captureAllDNS || len(dnsServersV4) > 0 || len(dnsServersV6) > 0 {
 		nft.AppendRule(constants.IstioOutputChain, constants.IstioProxyNatTable, "jump", constants.IstioOutputDNSChain)
 	}
 
@@ -697,13 +693,13 @@ func (cfg *NftablesConfigurator) addDNSConntrackZones(
 			"udp dport", "53",
 			"meta",
 			"skuid", uid,
-			"CT", "zone", "set", "1")
+			"ct", "zone", "set", "1")
 		// Packets with src port 15053 from istio to zone 2. These are Istio response packets to application clients
 		nft.AppendRule(constants.IstioOutputDNSChain, constants.IstioProxyRawTable,
 			"udp sport", "15053",
 			"meta",
 			"skuid", uid,
-			"CT", "zone", "set", "2")
+			"ct", "zone", "set", "2")
 	}
 	for _, gid := range split(proxyGID) {
 		// Packets with dst port 53 from istio to zone 1. These are Istio calls to upstream resolvers
@@ -711,13 +707,13 @@ func (cfg *NftablesConfigurator) addDNSConntrackZones(
 			"udp dport", "53",
 			"meta",
 			"skgid", gid,
-			"CT", "zone", "set", "1")
+			"ct", "zone", "set", "1")
 		// Packets with src port 15053 from istio to zone 2. These are Istio response packets to application clients
 		nft.AppendRule(constants.IstioOutputDNSChain, constants.IstioProxyRawTable,
 			"udp sport", "15053",
 			"meta",
 			"skgid", gid,
-			"CT", "zone", "set", "2")
+			"ct", "zone", "set", "2")
 	}
 
 	// For DNS conntrack, we need (at least one) inbound rule in raw/PREROUTING, so make a chain
@@ -732,11 +728,11 @@ func (cfg *NftablesConfigurator) addDNSConntrackZones(
 		// Mark all UDP dns traffic with dst port 53 as zone 2. These are application client packets towards DNS resolvers.
 		nft.AppendRule(constants.IstioOutputDNSChain, constants.IstioProxyRawTable,
 			"udp dport", "53",
-			"CT", "zone", "set", "2")
+			"ct", "zone", "set", "2")
 		// Mark all UDP dns traffic with src port 53 as zone 1. These are response packets from the DNS resolvers.
 		nft.AppendRule(constants.IstioInboundChain, constants.IstioProxyRawTable,
 			"udp sport", "53",
-			"CT", "zone", "set", "1")
+			"ct", "zone", "set", "1")
 	} else {
 
 		if len(dnsServersV4) != 0 || len(dnsServersV6) != 0 {
@@ -748,12 +744,12 @@ func (cfg *NftablesConfigurator) addDNSConntrackZones(
 			nft.AppendRule(constants.IstioOutputDNSChain, constants.IstioProxyRawTable,
 				"udp dport", "53",
 				"ip daddr", s+"/32",
-				"CT", "zone", "set", "2")
+				"ct", "zone", "set", "2")
 			// Mark all UDP dns traffic with src port 53 as zone 1. These are response packets from the DNS resolvers.
 			nft.AppendRule(constants.IstioInboundChain, constants.IstioProxyRawTable,
 				"udp sport", "53",
 				"ip daddr", s+"/32",
-				"CT", "zone", "set", "1")
+				"ct", "zone", "set", "1")
 		}
 
 		for _, s := range dnsServersV6 {
@@ -761,12 +757,12 @@ func (cfg *NftablesConfigurator) addDNSConntrackZones(
 			nft.AppendV6RuleIfSupported(constants.IstioOutputDNSChain, constants.IstioProxyRawTable,
 				"udp dport", "53",
 				"ip6 daddr", s+"/128",
-				"CT", "zone", "set", "2")
+				"ct", "zone", "set", "2")
 			// Mark all UDP dns traffic with src port 53 as zone 1. These are response packets from the DNS resolvers.
 			nft.AppendV6RuleIfSupported(constants.IstioInboundChain, constants.IstioProxyRawTable,
 				"udp sport", "53",
 				"ip6 daddr", s+"/128",
-				"CT", "zone", "set", "1")
+				"ct", "zone", "set", "1")
 		}
 	}
 }
@@ -801,52 +797,63 @@ func (cfg *NftablesConfigurator) handleCaptureByOwnerGroup(filter config.Interce
 	}
 }
 
-// addIstioNatTableRules sets up nftables rules in the IstioProxyNatTable table for Istio proxy.
-// It makes sure the table and the necessary chains exist, then adds rules from the rule builder.
-func (cfg *NftablesConfigurator) addIstioNatTableRules() (*knftables.Transaction, error) {
-	nft, err := cfg.nftProvider(constants.IstioProxyNatTable)
+func (cfg *NftablesConfigurator) addIstioTableRules(
+	tableName string,
+	chains []knftables.Chain,
+	rules []knftables.Rule,
+) (*knftables.Transaction, error) {
+	// Get the nftables provider for the specified table
+	nft, err := cfg.nftProvider(tableName)
 	if err != nil {
 		return nil, err
 	}
 
-	tx := nft.NewTransaction()
-
-	// Ensure that the table exists.
-	tx.Add(&knftables.Table{})
-
-	// Ensure that the chains exist
-	tx.Add(&knftables.Chain{
-		Name:     constants.PreroutingChain,
-		Type:     knftables.PtrTo(knftables.NATType),
-		Hook:     knftables.PtrTo(knftables.PreroutingHook),
-		Priority: knftables.PtrTo(knftables.DNATPriority),
-	})
-	tx.Add(&knftables.Chain{
-		Name:     constants.OutputChain,
-		Type:     knftables.PtrTo(knftables.NATType),
-		Hook:     knftables.PtrTo(knftables.OutputHook),
-		Priority: knftables.PtrTo(knftables.DNATPriority),
-	})
-	tx.Add(&knftables.Chain{
-		Name: constants.IstioInboundChain,
-	})
-	tx.Add(&knftables.Chain{
-		Name: constants.IstioRedirectChain,
-	})
-	tx.Add(&knftables.Chain{
-		Name: constants.IstioInRedirectChain,
-	})
-	tx.Add(&knftables.Chain{
-		Name: constants.IstioOutputChain,
-	})
-	tx.Add(&knftables.Chain{
-		Name: constants.IstioOutputDNSChain,
-	})
-
-	// we use chainRuleCount to keep track of how many rules have been added to each chain.
+	// Track how many rules have been added to each chain
 	chainRuleCount := make(map[string]int)
 
-	for _, rule := range cfg.ruleBuilder.Rules[constants.IstioProxyNatTable] {
+	// Count the number of rules present in each of the chains
+	for _, rule := range rules {
+		chainRuleCount[rule.Chain]++
+	}
+
+	// Lets filter out the chains that have rules
+	chainsWithRules := []knftables.Chain{}
+	for _, chain := range chains {
+		if chainRuleCount[chain.Name] > 0 {
+			chainsWithRules = append(chainsWithRules, chain)
+		}
+	}
+
+	// Skip creating the table itself if none of the chains have any rules
+	if len(chainsWithRules) == 0 {
+		return nil, nil
+	}
+
+	// Create a new transaction
+	tx := nft.NewTransaction()
+
+	if cfg.cfg.CleanupOnly {
+		// Delete the table
+		tx.Delete(&knftables.Table{})
+		return tx, nft.Run(context.TODO(), tx)
+	}
+
+	// Ensure that the table exists
+	tx.Add(&knftables.Table{})
+
+	// Flush the table to remove all existing rules before applying new ones
+	tx.Flush(&knftables.Table{})
+
+	// Add the chains that have rules
+	for _, chain := range chainsWithRules {
+		tx.Add(&chain)
+	}
+
+	// Reset chainRuleCount to handle the use-case mentioned below.
+	chainRuleCount = make(map[string]int)
+
+	// Add the rules to the transaction
+	for _, rule := range rules {
 		chain := rule.Chain
 
 		// In IPtables, inserting a rule at position 1 means it gets placed at the head of the chain. In contrast,
@@ -869,104 +876,92 @@ func (cfg *NftablesConfigurator) addIstioNatTableRules() (*knftables.Transaction
 	return tx, nft.Run(context.TODO(), tx)
 }
 
+// addIstioNatTableRules sets up nftables rules in the IstioProxyNatTable table for Istio proxy.
+// It makes sure the table and the necessary chains exist, then adds rules from the rule builder.
+func (cfg *NftablesConfigurator) addIstioNatTableRules() (*knftables.Transaction, error) {
+	chains := []knftables.Chain{
+		{
+			Name:     constants.PreroutingChain,
+			Type:     knftables.PtrTo(knftables.NATType),
+			Hook:     knftables.PtrTo(knftables.PreroutingHook),
+			Priority: knftables.PtrTo(knftables.DNATPriority),
+		},
+		{
+			Name:     constants.OutputChain,
+			Type:     knftables.PtrTo(knftables.NATType),
+			Hook:     knftables.PtrTo(knftables.OutputHook),
+			Priority: knftables.PtrTo(knftables.DNATPriority),
+		},
+		{Name: constants.IstioInboundChain},
+		{Name: constants.IstioRedirectChain},
+		{Name: constants.IstioInRedirectChain},
+		{Name: constants.IstioOutputChain},
+		{Name: constants.IstioOutputDNSChain},
+	}
+
+	rules := cfg.ruleBuilder.Rules[constants.IstioProxyNatTable]
+
+	return cfg.addIstioTableRules(constants.IstioProxyNatTable, chains, rules)
+}
+
 // addIstioMangleTableRules adds nftables rules to the IstioProxyMangleTable table for Istio proxy.
 // It makes sure the table and the necessary chains exist, then adds rules from the rule builder.
 func (cfg *NftablesConfigurator) addIstioMangleTableRules() (*knftables.Transaction, error) {
-	// If there are no rules to be added to the IstioProxyMangleTable, skip creating the associated tables and chains.
 	if len(cfg.ruleBuilder.Rules[constants.IstioProxyMangleTable]) == 0 {
 		return nil, nil
 	}
 
-	nft, err := cfg.nftProvider(constants.IstioProxyMangleTable)
-	if err != nil {
-		return nil, err
+	chains := []knftables.Chain{
+		{
+			Name:     constants.PreroutingChain,
+			Type:     knftables.PtrTo(knftables.FilterType),
+			Hook:     knftables.PtrTo(knftables.PreroutingHook),
+			Priority: knftables.PtrTo(knftables.ManglePriority),
+		},
+		{
+			Name:     constants.OutputChain,
+			Type:     knftables.PtrTo(knftables.FilterType),
+			Hook:     knftables.PtrTo(knftables.OutputHook),
+			Priority: knftables.PtrTo(knftables.ManglePriority),
+		},
+		{Name: constants.IstioDivertChain},
+		{Name: constants.IstioTproxyChain},
+		{Name: constants.IstioInboundChain},
+		{Name: constants.IstioDropChain},
 	}
 
-	tx := nft.NewTransaction()
+	rules := cfg.ruleBuilder.Rules[constants.IstioProxyMangleTable]
 
-	// Ensure that the table exists.
-	tx.Add(&knftables.Table{})
-
-	// Ensure that the chains exist
-	tx.Add(&knftables.Chain{
-		Name:     constants.PreroutingChain,
-		Type:     knftables.PtrTo(knftables.FilterType),
-		Hook:     knftables.PtrTo(knftables.PreroutingHook),
-		Priority: knftables.PtrTo(knftables.ManglePriority),
-	})
-	tx.Add(&knftables.Chain{
-		Name:     constants.OutputChain,
-		Type:     knftables.PtrTo(knftables.FilterType),
-		Hook:     knftables.PtrTo(knftables.OutputHook),
-		Priority: knftables.PtrTo(knftables.ManglePriority),
-	})
-	tx.Add(&knftables.Chain{
-		Name: constants.IstioDivertChain,
-	})
-	tx.Add(&knftables.Chain{
-		Name: constants.IstioTproxyChain,
-	})
-	tx.Add(&knftables.Chain{
-		Name: constants.IstioInboundChain,
-	})
-	tx.Add(&knftables.Chain{
-		Name: constants.IstioDropChain,
-	})
-
-	// Add the necessary rules.
-	for _, rule := range cfg.ruleBuilder.Rules[constants.IstioProxyMangleTable] {
-		tx.Add(&rule)
-	}
-
-	// Apply changes in this transaction
-	return tx, nft.Run(context.TODO(), tx)
+	return cfg.addIstioTableRules(constants.IstioProxyMangleTable, chains, rules)
 }
 
 // addIstioRawTableRules adds nftables rules to the IstioProxyRawTable table for Istio proxy.
 // It makes sure the table and the necessary chains exist, then adds rules from the rule builder.
 func (cfg *NftablesConfigurator) addIstioRawTableRules() (*knftables.Transaction, error) {
-	// If there are no rules to be added to the IstioProxyRawTable, skip creating the associated tables and chains.
 	if len(cfg.ruleBuilder.Rules[constants.IstioProxyRawTable]) == 0 {
 		return nil, nil
 	}
 
-	nft, err := cfg.nftProvider(constants.IstioProxyRawTable)
-	if err != nil {
-		return nil, err
+	chains := []knftables.Chain{
+		{
+			Name:     constants.PreroutingChain,
+			Type:     knftables.PtrTo(knftables.FilterType),
+			Hook:     knftables.PtrTo(knftables.PreroutingHook),
+			Priority: knftables.PtrTo(knftables.RawPriority),
+		},
+		{
+			Name:     constants.OutputChain,
+			Type:     knftables.PtrTo(knftables.FilterType),
+			Hook:     knftables.PtrTo(knftables.OutputHook),
+			Priority: knftables.PtrTo(knftables.RawPriority),
+		},
+		{Name: constants.IstioInboundChain},
+		{Name: constants.IstioOutputDNSChain},
 	}
 
-	tx := nft.NewTransaction()
+	rules := cfg.ruleBuilder.Rules[constants.IstioProxyRawTable]
 
-	// Ensure that the table exists.
-	tx.Add(&knftables.Table{})
-
-	// Ensure that the chains exist
-	tx.Add(&knftables.Chain{
-		Name:     constants.PreroutingChain,
-		Type:     knftables.PtrTo(knftables.FilterType),
-		Hook:     knftables.PtrTo(knftables.PreroutingHook),
-		Priority: knftables.PtrTo(knftables.RawPriority),
-	})
-	tx.Add(&knftables.Chain{
-		Name:     constants.OutputChain,
-		Type:     knftables.PtrTo(knftables.FilterType),
-		Hook:     knftables.PtrTo(knftables.OutputHook),
-		Priority: knftables.PtrTo(knftables.RawPriority),
-	})
-	tx.Add(&knftables.Chain{
-		Name: constants.IstioInboundChain,
-	})
-	tx.Add(&knftables.Chain{
-		Name: constants.IstioOutputDNSChain,
-	})
-
-	// Add the necessary rules.
-	for _, rule := range cfg.ruleBuilder.Rules[constants.IstioProxyRawTable] {
-		tx.Add(&rule)
-	}
-
-	// Apply changes in this transaction
-	return tx, nft.Run(context.TODO(), tx)
+	return cfg.addIstioTableRules(constants.IstioProxyRawTable, chains, rules)
 }
 
 // executeCommands runs all the steps to add nftables rules for Istio.

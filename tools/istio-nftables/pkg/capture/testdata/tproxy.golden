@@ -1,4 +1,5 @@
 add table inet istio-proxy-nat
+flush table inet istio-proxy-nat
 add chain inet istio-proxy-nat prerouting { type nat hook prerouting priority -100 ; }
 add chain inet istio-proxy-nat output { type nat hook output priority -100 ; }
 add chain inet istio-proxy-nat istio-inbound
@@ -31,12 +32,12 @@ add rule inet istio-proxy-nat istio-output ip daddr 1.1.0.0/16 return
 add rule inet istio-proxy-nat istio-output ip daddr 9.9.0.0/16 jump istio-redirect
 
 add table inet istio-proxy-mangle
+flush table inet istio-proxy-mangle
 add chain inet istio-proxy-mangle prerouting { type filter hook prerouting priority -150 ; }
 add chain inet istio-proxy-mangle output { type filter hook output priority -150 ; }
 add chain inet istio-proxy-mangle istio-divert
 add chain inet istio-proxy-mangle istio-tproxy
 add chain inet istio-proxy-mangle istio-inbound
-add chain inet istio-proxy-mangle ISTIO_DROP
 add rule inet istio-proxy-mangle prerouting iifname not-istio-nic return
 add rule inet istio-proxy-mangle output oifname not-istio-nic return
 add rule inet istio-proxy-mangle istio-divert meta mark set 1337
@@ -53,21 +54,22 @@ add rule inet istio-proxy-mangle output oifname lo meta l4proto tcp ip6 daddr !=
 add rule inet istio-proxy-mangle output oifname lo meta l4proto tcp ip daddr != 127.0.0.1/32 skgid 1337 meta mark set 1338
 add rule inet istio-proxy-mangle output oifname lo meta l4proto tcp ip6 daddr != ::1/128 skgid 1337 meta mark set 1338
 add rule inet istio-proxy-mangle output meta l4proto tcp ct mark 1337 meta mark set ct mark
-add rule inet istio-proxy-mangle istio-inbound index 0 meta l4proto tcp mark 1337 return
-add rule inet istio-proxy-mangle istio-inbound index 1 iifname lo meta l4proto tcp ip saddr 127.0.0.6/32 return
-add rule inet istio-proxy-mangle istio-inbound index 1 iifname lo meta l4proto tcp ip6 saddr ::6/128 return
-add rule inet istio-proxy-mangle istio-inbound index 2 iifname lo meta l4proto tcp mark != 1338 return
+insert rule inet istio-proxy-mangle istio-inbound index 0 meta l4proto tcp mark 1337 return
+insert rule inet istio-proxy-mangle istio-inbound index 1 iifname lo meta l4proto tcp ip saddr 127.0.0.6/32 return
+insert rule inet istio-proxy-mangle istio-inbound index 1 iifname lo meta l4proto tcp ip6 saddr ::6/128 return
+insert rule inet istio-proxy-mangle istio-inbound index 2 iifname lo meta l4proto tcp mark != 1338 return
 
 add table inet istio-proxy-raw
+flush table inet istio-proxy-raw
 add chain inet istio-proxy-raw prerouting { type filter hook prerouting priority -300 ; }
 add chain inet istio-proxy-raw output { type filter hook output priority -300 ; }
 add chain inet istio-proxy-raw istio-inbound
 add chain inet istio-proxy-raw istio-output-dns
 add rule inet istio-proxy-raw output jump istio-output-dns
-add rule inet istio-proxy-raw istio-output-dns udp dport 53 meta skuid 1337 CT zone set 1
-add rule inet istio-proxy-raw istio-output-dns udp sport 15053 meta skuid 1337 CT zone set 2
-add rule inet istio-proxy-raw istio-output-dns udp dport 53 meta skgid 1337 CT zone set 1
-add rule inet istio-proxy-raw istio-output-dns udp sport 15053 meta skgid 1337 CT zone set 2
+add rule inet istio-proxy-raw istio-output-dns udp dport 53 meta skuid 1337 ct zone set 1
+add rule inet istio-proxy-raw istio-output-dns udp sport 15053 meta skuid 1337 ct zone set 2
+add rule inet istio-proxy-raw istio-output-dns udp dport 53 meta skgid 1337 ct zone set 1
+add rule inet istio-proxy-raw istio-output-dns udp sport 15053 meta skgid 1337 ct zone set 2
 add rule inet istio-proxy-raw prerouting jump istio-inbound
-add rule inet istio-proxy-raw istio-output-dns udp dport 53 ip daddr 127.0.0.53/32 CT zone set 2
-add rule inet istio-proxy-raw istio-inbound udp sport 53 ip daddr 127.0.0.53/32 CT zone set 1
+add rule inet istio-proxy-raw istio-output-dns udp dport 53 ip daddr 127.0.0.53/32 ct zone set 2
+add rule inet istio-proxy-raw istio-inbound udp sport 53 ip daddr 127.0.0.53/32 ct zone set 1

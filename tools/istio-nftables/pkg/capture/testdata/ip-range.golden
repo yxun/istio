@@ -1,5 +1,5 @@
 add table inet istio-proxy-nat
-add chain inet istio-proxy-nat prerouting { type nat hook prerouting priority -100 ; }
+flush table inet istio-proxy-nat
 add chain inet istio-proxy-nat output { type nat hook output priority -100 ; }
 add chain inet istio-proxy-nat istio-inbound
 add chain inet istio-proxy-nat istio-redirect
@@ -31,19 +31,20 @@ add rule inet istio-proxy-nat istio-output ip daddr 1.1.0.0/16 return
 add rule inet istio-proxy-nat istio-output ip daddr 9.9.0.0/16 jump istio-redirect
 
 add table inet istio-proxy-raw
+flush table inet istio-proxy-raw
 add chain inet istio-proxy-raw prerouting { type filter hook prerouting priority -300 ; }
 add chain inet istio-proxy-raw output { type filter hook output priority -300 ; }
 add chain inet istio-proxy-raw istio-inbound
 add chain inet istio-proxy-raw istio-output-dns
 add rule inet istio-proxy-raw output jump istio-output-dns
-add rule inet istio-proxy-raw istio-output-dns udp dport 53 meta skuid 3 CT zone set 1
-add rule inet istio-proxy-raw istio-output-dns udp sport 15053 meta skuid 3 CT zone set 2
-add rule inet istio-proxy-raw istio-output-dns udp dport 53 meta skuid 4 CT zone set 1
-add rule inet istio-proxy-raw istio-output-dns udp sport 15053 meta skuid 4 CT zone set 2
-add rule inet istio-proxy-raw istio-output-dns udp dport 53 meta skgid 1 CT zone set 1
-add rule inet istio-proxy-raw istio-output-dns udp sport 15053 meta skgid 1 CT zone set 2
-add rule inet istio-proxy-raw istio-output-dns udp dport 53 meta skgid 2 CT zone set 1
-add rule inet istio-proxy-raw istio-output-dns udp sport 15053 meta skgid 2 CT zone set 2
+add rule inet istio-proxy-raw istio-output-dns udp dport 53 meta skuid 3 ct zone set 1
+add rule inet istio-proxy-raw istio-output-dns udp sport 15053 meta skuid 3 ct zone set 2
+add rule inet istio-proxy-raw istio-output-dns udp dport 53 meta skuid 4 ct zone set 1
+add rule inet istio-proxy-raw istio-output-dns udp sport 15053 meta skuid 4 ct zone set 2
+add rule inet istio-proxy-raw istio-output-dns udp dport 53 meta skgid 1 ct zone set 1
+add rule inet istio-proxy-raw istio-output-dns udp sport 15053 meta skgid 1 ct zone set 2
+add rule inet istio-proxy-raw istio-output-dns udp dport 53 meta skgid 2 ct zone set 1
+add rule inet istio-proxy-raw istio-output-dns udp sport 15053 meta skgid 2 ct zone set 2
 add rule inet istio-proxy-raw prerouting jump istio-inbound
-add rule inet istio-proxy-raw istio-output-dns udp dport 53 ip daddr 127.0.0.53/32 CT zone set 2
-add rule inet istio-proxy-raw istio-inbound udp sport 53 ip daddr 127.0.0.53/32 CT zone set 1
+add rule inet istio-proxy-raw istio-output-dns udp dport 53 ip daddr 127.0.0.53/32 ct zone set 2
+add rule inet istio-proxy-raw istio-inbound udp sport 53 ip daddr 127.0.0.53/32 ct zone set 1
