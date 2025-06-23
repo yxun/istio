@@ -594,6 +594,7 @@ func commonInstallArgs(ctx resource.Context, cfg Config, c cluster.Cluster, defa
 			"tag=" + ctx.Settings().Image.Tag,
 			"values.global.imagePullPolicy=" + ctx.Settings().Image.PullPolicy,
 			"values.global.variant=" + ctx.Settings().Image.Variant,
+			"values.global.nativeNftables=true",
 		},
 	}
 
