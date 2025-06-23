@@ -105,6 +105,7 @@ var (
 		EgressGatewayServiceNamespace: DefaultSystemNamespace,
 		EgressGatewayServiceName:      DefaultEgressGatewayServiceName,
 		EgressGatewayIstioLabel:       DefaultEgressGatewayIstioLabel,
+		NativeNftables:                true,
 	}
 )
 
@@ -213,6 +214,9 @@ type Config struct {
 	// ControlPlaneInstaller allows installation of custom control planes on istio deployments via an external script
 	// This field should only be set when DeployIstio is false
 	ControlPlaneInstaller string
+
+	// NativeNftables indicates the test should have NativeNftables enabled.
+	NativeNftables bool
 }
 
 func (c *Config) OverridesYAML(s *resource.Settings) string {
@@ -388,6 +392,7 @@ func (c *Config) String() string {
 	result += fmt.Sprintf("EgressGatewayIstioLabel:        %v\n", c.EgressGatewayIstioLabel)
 	result += fmt.Sprintf("SharedMeshConfigName:           %v\n", c.SharedMeshConfigName)
 	result += fmt.Sprintf("ControlPlaneInstaller:          %v\n", c.ControlPlaneInstaller)
+	result += fmt.Sprintf("NativeNftables:                 %v\n", c.NativeNftables)
 
 	return result
 }
