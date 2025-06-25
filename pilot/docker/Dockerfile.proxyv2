@@ -13,6 +13,10 @@ FROM ${ISTIO_BASE_REGISTRY}/base:${BASE_VERSION} AS debug
 RUN apt-get update && apt-get install -y nftables \
   && rm -rf /var/lib/apt/lists/*
 
+# TESTONLY
+# Remove iptables
+RUN apt-get remove -y iptables
+
 # The following section is used as base image if BASE_DISTRIBUTION=distroless
 FROM ${ISTIO_BASE_REGISTRY}/iptables:${BASE_VERSION} AS distroless
 
