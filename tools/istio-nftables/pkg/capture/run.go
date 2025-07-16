@@ -908,7 +908,7 @@ func (cfg *NftablesConfigurator) addIstioMangleTableRules(tx *knftables.Transact
 			Name:     constants.OutputChain,
 			Table:    constants.IstioProxyMangleTable,
 			Family:   knftables.InetFamily,
-			Type:     knftables.PtrTo(knftables.FilterType),
+			Type:     knftables.PtrTo(knftables.RouteType),
 			Hook:     knftables.PtrTo(knftables.OutputHook),
 			Priority: knftables.PtrTo(knftables.ManglePriority),
 		},
