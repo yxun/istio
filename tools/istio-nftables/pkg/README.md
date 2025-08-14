@@ -54,6 +54,87 @@ The `nftables` backend is **disabled by default**. To enable it, you must set th
 
 This flag configures Istio to use the `nftables` backend instead of `iptables` for traffic redirection.
 
+## Istio `iptables` backend upgrade to `nftables` backend
+
+The migration of using the existing Istio `iptables` backend to `nftables` backend can be done by upgrading Istio. The following example installs an Istio control plane with the `iptables` backend and a sample application `curl` in a data plane namespace `test-ns`.
+
+```sh
+istioctl install -y
+
+kubectl create ns test-ns
+kubectl label namespace test-ns istio-injection=enabled
+kubectl apply -n test-ns -f samples/curl/curl.yaml
+```
+
+When using the `iptables` backend, traffic redirection rules are managed by `iptables-nft`. You get the `table ip`, `table ip6` and `table ip nat` rules in the `istio-proxy` container. For example, attach a debug container and run `nft list ruleset` command:
+
+```sh
+kubectl -n test-ns debug --image istio/base --profile netadmin --attach -t -i \
+  "$(kubectl -n test-ns get pod -l app=curl -o jsonpath='{.items..metadata.name}')"
+root@curl-74c989df8d-vnqpj:$ nft list ruleset
+```
+
+When migrating to the `nftables` backend, the Canary upgrade approach is recommended. You can install a canary version of Istio with the `nftables` backend to validate that the new version is compatible with your existing configuration and data plane using the steps below:
+
+1. Install a canary version of Istio with the `nftables` backend.
+
+```sh
+istioctl install --set revision=canary --set values.global.nativeNftables=true -y
+```
+
+2. Upgrade the data plane and restart the deployment
+
+```sh
+kubectl label namespace test-ns istio-injection- istio.io/rev=canary
+kubectl rollout restart deployment -n test-ns
+```
+
+3. Check the `nftables` backend running in the `curl` application pod. When using the `nftables` backend, You get the `table inet` rules in the `istio-proxy` container. For example, attach a debug container and run `nft list ruleset` command:
+
+```sh
+kubectl -n test-ns debug --image istio/base --profile netadmin --attach -t -i \
+  "$(kubectl -n test-ns get pod -l app=curl -o jsonpath='{.items..metadata.name}')"
+root@curl-6c88b89ddf-kbzn6:$ nft list ruleset
+```
+
+3. After upgrading both the control plane and data plane, you can uninstall the old control plane in this example.
+
+```sh
+istioctl uninstall --revision default -y
+```
+
+### Upgrade with Helm
+
+When upgrading Istio with the CNI node agent, you can install a canary version of Istio control plane and upgrade the `istio-cni` node agent separately.
+For example, there is an Istio CNI component running in the `istio-cni` namespace, you can upgrade and enable the `nftables` backend using the following steps:
+
+1. Install a canary version of Istiod control plane with the `nftables` backend.
+
+```sh
+helm install istiod-canary istio/istiod \
+  --set revision=canary \
+  --set values.global.nativeNftables=true \
+  -n istio-system
+```
+
+2. Upgrade the CNI component separately from the revisioned control plane.
+
+```sh
+helm upgrade istio-cni istio/cni \
+  --set values.global.nativeNftables=true \
+  -n istio-cni --wait
+```
+
+3. Upgrade the data plane and restart the deployment
+
+```sh
+kubectl label namespace test-ns istio-injection- istio.io/rev=canary
+kubectl rollout restart deployment -n test-ns
+```
+
+4. After upgrading both the control plane and data plane, you can uninstall the old control plane.
+
+
 ## Implementation Details
 
 ### Table Structure
